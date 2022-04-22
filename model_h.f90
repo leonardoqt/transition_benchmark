@@ -4,7 +4,7 @@ module model_H
 	!
 	implicit none
 	!
-	integer  :: sz1 = 2
+	integer  :: sz1 = 2, sz2 = 3
 	contains
 	!
 	!
@@ -21,4 +21,20 @@ module model_H
 		!
 	end function H1
 	!
+	function H2(x)
+		!
+		implicit none
+		!
+		real(dp)  :: x
+		real(dp), allocatable :: H2(:,:)
+		!
+		allocate(H2(sz2,sz2))
+		!
+		H2(:,:) = 1.d-1 * x
+		H2(1,1) = H2(1,1) + 1
+		H2(2,2) = H2(2,2) + 2
+		H2(3,3) = H2(3,3) + 3
+		!
+	end function H2
+
 end module model_H
