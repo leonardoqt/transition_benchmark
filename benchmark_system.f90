@@ -95,7 +95,7 @@ module benchmark_system
 		integer :: idt
 		!
 		do idt = 1, nT-1
-			T_rate(:,:,idt) = logm(matmul(transpose(U(:,:,idt)),U(:,:,idt+1)) )
+			T_rate(:,:,idt) = logm( matmul(transpose(U(:,:,idt)),U(:,:,idt+1)) ) / dt
 		enddo
 	end subroutine evo_npi
 	!
@@ -133,8 +133,9 @@ module benchmark_system
 		!
 		! working variables
 		real(dp), allocatable :: wr(:),wi(:),vl(:,:),vr(:,:),work(:),zeros(:)
-		complex(dp), allocatable :: vec1(:,:), vec2(:,:), logw(:,:) ! A = vec1*w*vec2^\dagger
+		complex(dp), allocatable :: cwork(:), vec1(:,:), vec2(:,:), logw(:,:) ! A = vec1*w*vec2^\dagger
 		integer :: lwork, err_msg, incr, istate, jstate
+		integer, allocatable :: ipiv(:)
 		!
 		!
 		lwork = (4*nstate)*3
@@ -149,7 +150,7 @@ module benchmark_system
 		allocate( work(lwork) )
 		!
 		A = A_in
-		call dgeev('V','V',nstate,A,nstate,wr,wi,vl,nstate,vr,nstate,work,lwork,err_msg)
+		call dgeev('N','V',nstate,A,nstate,wr,wi,vl,nstate,vr,nstate,work,lwork,err_msg)
 		!
 		allocate( zeros(nstate) )
 		allocate( logw(nstate,nstate) )
@@ -158,29 +159,30 @@ module benchmark_system
 		logw = (0.d0, 0.d0)
 		incr = 1
 		do istate = 1,nstate
-			if ( abs(wi(istate)) < 1e-10 ) then
+			if ( abs(wi(istate)) < 1.d-10 ) then
 				vec1(:,istate) = cmplx( vr(:,istate), zeros )
-				vec2(:,istate) = cmplx( vl(:,istate), zeros )
 			else
 				if (incr == 1) then
 				vec1(:,istate)   = cmplx( vr(:,istate), vr(:,istate+1) )
 				vec1(:,istate+1) = cmplx( vr(:,istate),-vr(:,istate+1) )
-				vec2(:,istate)   = cmplx( vl(:,istate),-vl(:,istate+1) ) ! conjugate is applied
-				vec2(:,istate+1) = cmplx( vl(:,istate), vl(:,istate+1) ) ! conjugate is applied
 				endif
 				incr = -incr
 			endif
-			logw(istate,istate) = cmplx( wr(istate), wi(istate) )
+			logw(istate,istate) = log( cmplx( wr(istate), wi(istate) ) )
 		enddo
-		write(*,'(3(ES12.4,1X))') A_in
-		write(*,*) ''
-		write(*,'(3(ES12.4,1X))') wi
-		write(*,*) ''
-		write(*,'(3(ES12.4,1X))') dble( matmul(matmul(vec1,logw),transpose(vec2)) )
-		write(*,*) ''
-		write(*,*) ''
 		!
-		deallocate(wr,wi,vl,vr,work,zeros,A,vec1,vec2,logw)
+		vec2 = vec1
+		lwork = nstate * 3
+		allocate( cwork(lwork) )
+		allocate( ipiv(nstate) )
+		call zgetrf(nstate,nstate,vec2,nstate,ipiv,err_msg)
+		call zgetri(nstate,vec2,nstate,ipiv,cwork,lwork,err_msg)
+		!
+		logm = dble(matmul(matmul(vec1,logw),vec2))
+		logm = ( logm - transpose(logm) )/2
+		!write(*,'(3(ES12.4,1X))') logm
+		!
+		deallocate(wr,wi,vl,vr,work,zeros,A,vec1,vec2,logw,cwork,ipiv)
 		!
 	end function logm
 	!
