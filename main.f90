@@ -8,34 +8,48 @@ program test
 	implicit none
 	!
 	real(dp)   , allocatable :: psi(:), Tv(:,:,:), hop_p_npi(:), hop_p_hst(:), hop_p_loc01(:), hop_p_loc19(:)
-	complex(dp), allocatable :: Ut(:,:,:), rho_f(:,:)
-	integer                  :: idt
+	complex(dp), allocatable :: Ut(:,:,:), rho_f_npi(:,:), rho_f_hst(:,:), rho_f_loc(:,:)
+	integer                  :: idt, state0 = 1
 	!
 	allocate(psi(sz1))
 	!
-	call assign_model(1.0d0,-2.5d0,2.5d0,1.0d-4,H1,sz1)
-	!call assign_model(1.0d0,-2.5d0,2.5d0,1.0d-4,H2,sz2)
+	!call assign_model(1.0d0,-2.5d0,2.5d0,1.0d-4,H1,sz1)
+	call assign_model(1.0d0,-2.5d0,2.5d0,1.0d-4,H2,sz2)
 	!
+	psi = 0.d0
 	psi(1) = 1.d0
 	call assign_psi(psi)
 	!
 	call evo_npi(Ut, Tv)
-	call final_rho_hop(Ut, Tv, rho_f, hop_p_npi, 1)
+	call final_rho_hop(Ut, Tv, rho_f_npi, hop_p_npi, state0)
 	call evo_hst(Ut, Tv)
-	call final_rho_hop(Ut, Tv, rho_f, hop_p_hst, 1)
+	call final_rho_hop(Ut, Tv, rho_f_hst, hop_p_hst, state0)
 	call evo_loc01(Ut, Tv)
-	call final_rho_hop(Ut, Tv, rho_f, hop_p_loc01, 1)
-	call final_rho_hop_loc19(Ut, Tv, rho_f, hop_p_loc19, 1)
+	call final_rho_hop(Ut, Tv, rho_f_loc, hop_p_loc01, state0)
+	call final_rho_hop_loc19(Ut, Tv, rho_f_loc, hop_p_loc19, state0)
 	!
+1001 format (3(ES14.6,1X))
 	write(*,*) 'Total hopping probability'
-	write(*,'("NPI  " 2(ES12.4,1X))') hop_p_npi
-	write(*,'("HST  " 2(ES12.4,1X))') hop_p_hst
-	write(*,'("LOC01" 2(ES12.4,1X))') hop_p_loc01
-	write(*,'("LOC19" 2(ES12.4,1X))') hop_p_loc19
+	write(*,'("NPI  " 3(ES14.6,1X))') hop_p_npi
+	write(*,'("HST  " 3(ES14.6,1X))') hop_p_hst
+	write(*,'("LOC01" 3(ES14.6,1X))') hop_p_loc01
+	write(*,'("LOC19" 3(ES14.6,1X))') hop_p_loc19
 	write(*,*) ''
 	write(*,*) ''
-	write(*,*) 'Final density matrix'
-	write(*,'(2(ES12.4,1X))')  dble(rho_f)
+	write(*,*) 'Final density matrix (real)'
+	write(*,*) 'NPI'
+	write(*,1001)  dble(rho_f_npi)
+	write(*,*) 'HST'
+	write(*,1001)  dble(rho_f_hst)
+	write(*,*) 'LOC'
+	write(*,1001)  dble(rho_f_loc)
 	write(*,*) ''
-	write(*,'(2(ES12.4,1X))') aimag(rho_f)
+	write(*,*) 'Final density matrix (imag)'
+	write(*,*) 'NPI'
+	write(*,1001) aimag(rho_f_npi)
+	write(*,*) 'HST'
+	write(*,1001) aimag(rho_f_hst)
+	write(*,*) 'LOC'
+	write(*,1001) aimag(rho_f_loc)
+	write(*,*) ''
 end program test

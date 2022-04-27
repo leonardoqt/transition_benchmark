@@ -121,7 +121,7 @@ module benchmark_system
 			enddo
 			iHTdt = iHTdt - Tv(:,:,idt)*dt
 			U_dt = expm(iHTdt)
-			Ut(:,:,idt+1) = matmul(U_dt, U(:,:,idt))
+			Ut(:,:,idt+1) = matmul(U_dt, Ut(:,:,idt))
 		enddo
 		!
 		deallocate(U_dt,iHTdt)
@@ -163,7 +163,7 @@ module benchmark_system
 			enddo
 			iHTdt = iHTdt - Tv(:,:,idt)*dt
 			U_dt = expm(iHTdt)
-			Ut(:,:,idt+1) = matmul(U_dt, U(:,:,idt))
+			Ut(:,:,idt+1) = matmul(U_dt, Ut(:,:,idt))
 		enddo
 		!
 		deallocate(U_dt,iHTdt)
@@ -221,15 +221,15 @@ module benchmark_system
 			do istate = 1, nstate
 				iHTdt(istate,istate) = cmplx(0.d0, -E(istate,idt+1)/2*dt, dp)
 			enddo
-			iHTdt = iHTdt - Tv(:,:,idt)*( (0.d0, 5.d-1) * dt )
+			iHTdt = iHTdt - Hloc*( (0.d0, 5.d-1) * dt )
 			U_dt = expm(iHTdt)
 			U_dt = matmul(transpose(Tv(:,:,idt)), U_dt)
-			Ut(:,:,idt+1) = matmul(U_dt, U(:,:,idt))
+			Ut(:,:,idt+1) = matmul(U_dt, Ut(:,:,idt))
 		enddo
 		!
 		!
 		! the following uses (19) to the first order in dt
-		! TODO: the problem of (19) is how to apply to mixed state
+		! TODO: the problem of (19) is how to apply it to the mixed state
 		do idt = 1, nT-1
 			Tv(:,:,idt) = Tv(:,:,idt) / dt
 			do istate = 1, nstate
@@ -312,10 +312,10 @@ module benchmark_system
 				! calculate Sk
 				Sk = 0.d0
 				do istate = 1, nstate
-					! The diagonal of Tv is set to zero, Tv*dt is the T in the reference
+					! The diagonal of Tv was set to zero, Tv*dt is the T in the reference
 					dP = dble( rho_f(istate,istate)-rho_last(istate,istate) )
 					if ( dP > 0.d0 ) then
-						! dt is not necessary here, it is included in wk
+						! dt is not necessary here, since Sk and xkj serve as a partition scheme
 						Sk = Sk + abs(Tv(state0,istate,idt))*sqrt(dP)
 					endif
 				enddo
@@ -461,5 +461,18 @@ module benchmark_system
 		deallocate(vec,val,work,rwork)
 		!
 	end function expm
+	!
+	!
+	subroutine test_b(Tv)
+		!
+		implicit none
+		!
+		real(dp), dimension(:,:,:)  :: Tv
+		integer                :: idt
+		!
+		do idt = 1,nT-1
+			write(*,'(I12,3(ES16.8,1X))') idt, Tv(2,1,idt), Tv(3,1,idt), Tv(3,2,idt)
+		enddo
+	end subroutine
 	!
 end module benchmark_system
