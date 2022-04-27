@@ -7,26 +7,35 @@ program test
 	!
 	implicit none
 	!
-	real(dp)   , allocatable :: psi(:), Tv_npi(:,:,:), hop_p(:)
-	complex(dp), allocatable :: Ut_npi(:,:,:), rho_f(:,:)
+	real(dp)   , allocatable :: psi(:), Tv(:,:,:), hop_p_npi(:), hop_p_hst(:), hop_p_loc01(:), hop_p_loc19(:)
+	complex(dp), allocatable :: Ut(:,:,:), rho_f(:,:)
 	integer                  :: idt
 	!
-	call assign_model(1.0d0,-0.5d0,2.5d0,1.0d-4,H1,sz1)
-	call assign_model(1.0d0,-0.5d0,2.5d0,1.0d-4,H2,sz2)
-	!write(*,'(3(ES12.4,1X))') U
+	allocate(psi(sz1))
 	!
-	allocate(psi(sz2))
+	call assign_model(1.0d0,-2.5d0,2.5d0,1.0d-4,H1,sz1)
+	!call assign_model(1.0d0,-2.5d0,2.5d0,1.0d-4,H2,sz2)
+	!
 	psi(1) = 1.d0
 	call assign_psi(psi)
 	!
-	call evo_loc01(Ut_npi, Tv_npi)
-	!call final_rho_hop(Ut_npi, Tv_npi, rho_f, hop_p, 1)
-	call final_rho_hop_loc19(Ut_npi, Tv_npi, rho_f, hop_p, 1)
+	call evo_npi(Ut, Tv)
+	call final_rho_hop(Ut, Tv, rho_f, hop_p_npi, 1)
+	call evo_hst(Ut, Tv)
+	call final_rho_hop(Ut, Tv, rho_f, hop_p_hst, 1)
+	call evo_loc01(Ut, Tv)
+	call final_rho_hop(Ut, Tv, rho_f, hop_p_loc01, 1)
+	call final_rho_hop_loc19(Ut, Tv, rho_f, hop_p_loc19, 1)
 	!
-	write(*,'(3(ES12.4,1X))') hop_p
+	write(*,*) 'Total hopping probability'
+	write(*,'("NPI  " 2(ES12.4,1X))') hop_p_npi
+	write(*,'("HST  " 2(ES12.4,1X))') hop_p_hst
+	write(*,'("LOC01" 2(ES12.4,1X))') hop_p_loc01
+	write(*,'("LOC19" 2(ES12.4,1X))') hop_p_loc19
 	write(*,*) ''
 	write(*,*) ''
-	write(*,'(3(ES12.4,1X))')  dble(rho_f)
+	write(*,*) 'Final density matrix'
+	write(*,'(2(ES12.4,1X))')  dble(rho_f)
 	write(*,*) ''
-	write(*,'(3(ES12.4,1X))') aimag(rho_f)
+	write(*,'(2(ES12.4,1X))') aimag(rho_f)
 end program test

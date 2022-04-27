@@ -17,7 +17,9 @@ module model_H
 		!
 		allocate(H1(sz1,sz1))
 		!
-		H1(:,:) = 1.d0
+		H1(:,:) = 1.d-1
+		H1(1,1) = H1(1,1) + x
+		H1(2,2) = H1(2,2) - x
 		!
 	end function H1
 	!
