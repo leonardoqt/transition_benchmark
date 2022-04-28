@@ -34,22 +34,22 @@ program test
 	write(*,'("HST  " 3(ES14.6,1X))') hop_p_hst
 	write(*,'("LOC01" 3(ES14.6,1X))') hop_p_loc01
 	write(*,'("LOC19" 3(ES14.6,1X))') hop_p_loc19
-	write(*,*) ''
-	write(*,*) ''
-	write(*,*) 'Final density matrix (real)'
-	write(*,*) 'NPI'
-	write(*,1001)  dble(rho_f_npi)
-	write(*,*) 'HST'
-	write(*,1001)  dble(rho_f_hst)
-	write(*,*) 'LOC'
-	write(*,1001)  dble(rho_f_loc)
-	write(*,*) ''
-	write(*,*) 'Final density matrix (imag)'
-	write(*,*) 'NPI'
-	write(*,1001) aimag(rho_f_npi)
-	write(*,*) 'HST'
-	write(*,1001) aimag(rho_f_hst)
-	write(*,*) 'LOC'
-	write(*,1001) aimag(rho_f_loc)
-	write(*,*) ''
+	!write(*,*) ''
+	!write(*,*) ''
+	!write(*,*) 'Final density matrix (real)'
+	!write(*,*) 'NPI'
+	!write(*,1001)  dble(rho_f_npi)
+	!write(*,*) 'HST'
+	!write(*,1001)  dble(rho_f_hst)
+	!write(*,*) 'LOC'
+	!write(*,1001)  dble(rho_f_loc)
+	!write(*,*) ''
+	!write(*,*) 'Final density matrix (imag)'
+	!write(*,*) 'NPI'
+	!write(*,1001) aimag(rho_f_npi)
+	!write(*,*) 'HST'
+	!write(*,1001) aimag(rho_f_hst)
+	!write(*,*) 'LOC'
+	!write(*,1001) aimag(rho_f_loc)
+	!write(*,*) ''
 end program test
