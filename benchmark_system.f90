@@ -400,7 +400,7 @@ module benchmark_system
 		incr = 1
 		do istate = 1,nstate
 			if ( abs(wi(istate)) < 1.d-10 ) then
-				vec1(:,istate) = cmplx( vr(:,istate), zeros, dp )
+				vec1(:,istate) = vr(:,istate)
 			else
 				if (incr == 1) then
 				vec1(:,istate)   = cmplx( vr(:,istate), vr(:,istate+1), dp )
@@ -411,18 +411,19 @@ module benchmark_system
 			logw(istate,istate) = log( cmplx( wr(istate), wi(istate), dp ) )
 		enddo
 		!
-		vec2 = vec1
-		lwork = nstate * 3
-		allocate( cwork(lwork) )
-		allocate( ipiv(nstate) )
-		call zgetrf(nstate,nstate,vec2,nstate,ipiv,err_msg)
-		call zgetri(nstate,vec2,nstate,ipiv,cwork,lwork,err_msg)
+		vec2 = transpose(conjg(vec1))
+		!lwork = nstate * 3
+		!allocate( cwork(lwork) )
+		!allocate( ipiv(nstate) )
+		!call zgetrf(nstate,nstate,vec2,nstate,ipiv,err_msg)
+		!call zgetri(nstate,vec2,nstate,ipiv,cwork,lwork,err_msg)
 		!
 		logm = dble(matmul(matmul(vec1,logw),vec2))
 		logm = ( logm - transpose(logm) )/2
 		!write(*,'(3(ES12.4,1X))') logm
 		!
-		deallocate(wr,wi,vl,vr,work,zeros,A,vec1,vec2,logw,cwork,ipiv)
+		!deallocate(wr,wi,vl,vr,work,zeros,A,vec1,vec2,logw,cwork,ipiv)
+		deallocate(wr,wi,vl,vr,work,zeros,A,vec1,vec2,logw)
 		!
 	end function logm
 	!
