@@ -338,6 +338,52 @@ module benchmark_system
 	end subroutine final_rho_hop_loc19
 	!
 	!
+	subroutine final_psi_hop_loc01(Ut, Tv, psi_f, hop_p, state0)
+		! use given Ut, Tv and stored psi0 to calculate final psi and the 
+		! total hopping rate from state0 to all states
+		!
+		implicit none
+		!
+		complex(dp), dimension(:,:,:)  :: Ut
+		real(dp)   , dimension(:,:,:)  :: Tv
+		integer                        :: state0
+		!
+		complex(dp), allocatable       :: psi_f(:,:), psi_l(:,:), U_dt(:,:)
+		real(dp)   , allocatable       :: hop_p(:)
+		!
+		real(dp)                       :: drate
+		integer                        :: idt, istate
+		!
+		if ( allocated(psi_f) ) deallocate(psi_f)
+		if ( allocated(hop_p) ) deallocate(hop_p)
+		allocate( psi_f(nstate,1) )
+		allocate( hop_p(nstate) )
+		allocate( psi_l(nstate,1) )
+		allocate( U_dt(nstate,nstate) )
+		!
+		hop_p = 0.d0
+		psi_l(:,1) = psi0
+		psi_l = matmul(Ut(:,:,1), psi_l)
+		do idt = 1, nT-1
+			U_dt = matmul( Ut(:,:,idt+1), transpose(conjg(Ut(:,:,idt))) )
+			psi_f = matmul(U_dt, psi_l)
+			do istate = 1, nstate
+				if ( istate .ne. state0 ) then
+				drate = -dble( U_dt(state0,istate)*psi_l(istate,1)*conjg(psi_f(state0,1)) ) * &
+				         dble( psi_f(state0,1)*conjg(psi_f(state0,1)) - psi_l(state0,1)*conjg(psi_l(state0,1)) )
+				drate = drate / ( dble( psi_f(state0,1)*conjg(psi_f(state0,1)) ) - &
+				                  dble( U_dt(state0,state0)*psi_l(state0,1)*conjg(psi_f(state0,1)) ) )
+				if ( drate > 0.d0 ) hop_p(istate) = hop_p(istate) + drate/dble( psi_l(state0,1)*conjg(psi_l(state0,1)) )
+				endif
+			enddo
+			psi_l = psi_f
+		enddo
+		!
+		deallocate( psi_l,U_dt )
+		!
+	end subroutine final_psi_hop_loc01
+	!
+	!
 	!
 	subroutine diag_real(H_in, vec, val)
 		!

@@ -34,7 +34,7 @@ module model_H
 		!
 		H2(:,:) = 1.d-1
 		H2(1,1) = x
-		H2(2,2) = 1.d-16
+		H2(2,2) = x + 1.d-6
 		H2(3,3) = -x
 		!
 	end function H2
