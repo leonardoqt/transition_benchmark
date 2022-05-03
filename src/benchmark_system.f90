@@ -20,7 +20,9 @@ module benchmark_system
 		integer  :: nstate_in
 		!
 		! working variables
-		integer  :: idt, istate
+		integer  :: idt, istate, jstate, n_bad_diagonal, imax, imin
+		integer , allocatable :: index_bad(:)
+		real(dp), allocatable :: S(:,:)
 		!
 		interface 
 			function H_diabat(x)
@@ -51,12 +53,52 @@ module benchmark_system
 			call diag_real( H_diabat(x_ini_in+v0*(idt-1)*dt), U(:,:,idt), E(:,idt) )
 		enddo
 		!
-		! naive parallel transport of U
+		! naive parallel transport of U followed by ZyZ's simplified algorithm
+		allocate( index_bad(nstate) )
+		allocate( S(nstate,nstate) )
 		do idt = 2, nT
+			! naive parallel transport
 			do istate = 1, nstate
 				U(:,istate,idt) = U(:,istate,idt) * sign( 1.d0, dot_product(U(:,istate,idt-1),U(:,istate,idt)) )
 			enddo
+			!
+			! ZyZ's simplified algorithm
+			n_bad_diagonal = 0
+			S = matmul( transpose(U(:,:,idt-1)), U(:,:,idt) )
+			do istate = 1, nstate
+				if ( S(istate,istate) < 1.d0 - 2.d0 / nstate ) then
+					n_bad_diagonal = n_bad_diagonal+1
+					index_bad(n_bad_diagonal) = istate
+				endif
+			enddo
+			!
+			if ( n_bad_diagonal > 0 ) then
+				if ( mod(n_bad_diagonal,2) .eq. 0 ) then
+					! make the largest element in the last bad column negative
+					! then the rest of them are positive, just like having n_bad_diagonal - 1 bad ones
+					istate = index_bad(n_bad_diagonal)
+					imax = maxloc( S(:,istate), 1)
+					imin = minloc( S(:,istate), 1)
+					if ( S(imax,istate) + S(imin,istate) > 0 ) then
+						U(:,istate,idt) = -U(:,istate,idt)
+					endif
+					n_bad_diagonal = n_bad_diagonal - 1
+				endif
+				!
+				! all largest elements in the bad columns are positive
+				do istate = 1, n_bad_diagonal
+					jstate = index_bad(istate)
+					imax = maxloc( S(:,jstate), 1)
+					imin = minloc( S(:,jstate), 1)
+					if ( S(imax,jstate) + S(imin,jstate) < 0 ) then
+						U(:,istate,idt) = -U(:,istate,idt)
+					endif
+				enddo
+			endif
+			!
 		enddo
+		!
+		deallocate(index_bad,S)
 		!
 	end subroutine assign_model
 	!
@@ -243,9 +285,10 @@ module benchmark_system
 	!
 	!
 	!
-	subroutine final_rho_hop(Ut, Tv, rho_f, hop_p, state0)
+	subroutine final_rho_hop(Ut, Tv, rho_f, hop_p, pop_p, state0)
 		! use given Ut, Tv and stored rho0 to calculate final rho and the 
 		! total hopping rate from state0 to all states
+		! also calculate final population based on hops
 		!
 		implicit none
 		!
@@ -254,29 +297,72 @@ module benchmark_system
 		integer                        :: state0
 		!
 		complex(dp), allocatable       :: rho_f(:,:)
-		real(dp)   , allocatable       :: hop_p(:)
+		real(dp)   , allocatable       :: hop_p(:), pop_p(:,:)
 		!
 		real(dp)                       :: drate
-		integer                        :: idt, istate
+		real(dp)   , allocatable       :: T_trans(:,:), p_trans(:,:)
+		integer                        :: idt, istate, jstate
 		!
 		if ( allocated(rho_f) ) deallocate(rho_f)
 		if ( allocated(hop_p) ) deallocate(hop_p)
+		if ( allocated(pop_p) ) deallocate(pop_p)
 		allocate( rho_f(nstate,nstate) )
 		allocate( hop_p(nstate) )
+		allocate( pop_p(nstate,1) )
+		!
+		allocate( T_trans(nstate,nstate) )
+		allocate( p_trans(nstate,nstate) )
+		!
+		! initial pop_p is the diagonal of rho_adiabat
+		rho_f = matmul( matmul(Ut(:,:,1), rho0), transpose(conjg(Ut(:,:,1))) )
+		do istate = 1, nstate
+			pop_p(istate,1) = dble(rho_f(istate,istate))
+		enddo
 		!
 		hop_p = 0.d0
 		do idt = 1, nT-1
 			rho_f = matmul( matmul(Ut(:,:,idt+1), rho0), transpose(conjg(Ut(:,:,idt+1))) )
+			!
+			! for calculating hop_p
 			do istate = 1, nstate
 				drate = 2 * dble( Tv(state0,istate,idt)*rho_f(istate,state0) ) / dble( rho_f(state0,state0) ) * dt
+				!if ( drate > 1.d0 ) drate = 1.d0
 				if ( drate > 0.d0 ) hop_p(istate) = hop_p(istate) + drate
 			enddo
+			!
+			! for calculating pop_p
+			! T_trans
+			T_trans = 0.d0
+			do istate = 1, nstate
+				do jstate = 1, nstate
+					if ( jstate .ne. istate ) then
+						drate = 2 * dble( Tv(istate,jstate,idt)*rho_f(jstate,istate) ) / dble( rho_f(istate,istate) )
+						!if ( drate*dt > 1.d0 ) drate = 1.d0/dt
+						if ( drate > 0.d0 ) T_trans(istate,jstate) = drate
+					endif
+				enddo
+			enddo
+			!
+			! normalize Ti: if sum greater than 1
+			do istate = 1, nstate
+				if ( sum(T_trans(istate,:))*dt > 1.d0 ) T_trans(istate,:) = T_trans(istate,:) / ( sum(T_trans(istate,:))*dt )
+			enddo
+			!
+			p_trans = transpose(T_trans)
+			do istate = 1, nstate
+				p_trans(istate,istate) = p_trans(istate,istate) - sum(T_trans(istate,:))
+			enddo
+			!
+			! naive integration for dp = p_trans*p*dt
+			pop_p = pop_p + matmul(p_trans,pop_p)*dt
 		enddo
+		!
+		deallocate(T_trans,p_trans)
 		!
 	end subroutine final_rho_hop
 	!
 	!
-	subroutine final_rho_hop_loc19(Ut, Tv, rho_f, hop_p, state0)
+	subroutine final_rho_hop_loc19(Ut, Tv, rho_f, hop_p, pop_p, state0)
 		! https://doi.org/10.1016/j.comptc.2019.02.009
 		!
 		! use given Ut, Tv and stored rho0 to calculate final rho and the 
@@ -289,56 +375,89 @@ module benchmark_system
 		integer                        :: state0
 		!
 		complex(dp), allocatable       :: rho_f(:,:)
-		real(dp)   , allocatable       :: hop_p(:)
+		real(dp)   , allocatable       :: hop_p(:), pop_p(:,:)
 		!
-		complex(dp), allocatable       :: rho_last(:,:)
-		real(dp)                       :: drate, wk, Sk, dP, xkj
-		integer                        :: idt, istate
+		complex(dp), allocatable       :: rho_l(:,:)
+		real(dp)   , allocatable       :: T_trans(:,:), p_trans(:,:)
+		real(dp)                       :: drate, wk, Sk, Pdt, xkj
+		integer                        :: idt, istate, jstate
 		!
 		if ( allocated(rho_f) ) deallocate(rho_f)
 		if ( allocated(hop_p) ) deallocate(hop_p)
+		if ( allocated(pop_p) ) deallocate(pop_p)
 		allocate( rho_f(nstate,nstate) )
 		allocate( hop_p(nstate) )
+		allocate( pop_p(nstate,1) )
 		!
-		allocate( rho_last(nstate,nstate) )
+		allocate( rho_l(nstate,nstate) )
+		allocate( T_trans(nstate,nstate) )
+		allocate( p_trans(nstate,nstate) )
 		!
-		hop_p = 0.d0
-		rho_last = matmul( matmul(Ut(:,:,1), rho0), transpose(conjg(Ut(:,:,1))) )
-		do idt = 1, nT-1
-			rho_f = matmul( matmul(Ut(:,:,idt+1), rho0), transpose(conjg(Ut(:,:,idt+1))) )
-			wk = dble( rho_last(state0,state0)-rho_f(state0,state0) ) / dble( rho_last(state0,state0) )
-			if (wk > 0.d0) then
-				!
-				! calculate Sk
-				Sk = 0.d0
-				do istate = 1, nstate
-					! The diagonal of Tv was set to zero, Tv*dt is the T in the reference
-					dP = dble( rho_f(istate,istate)-rho_last(istate,istate) )
-					if ( dP > 0.d0 ) then
-						! dt is not necessary here, since Sk and xkj serve as a partition scheme
-						Sk = Sk + abs(Tv(state0,istate,idt))*sqrt(dP)
-					endif
-				enddo
-				!
-				! calculate xkj
-				do istate = 1, nstate
-					dP = dble( rho_f(istate,istate)-rho_last(istate,istate) )
-					if ( dP > 0.d0 ) then
-						xkj = abs(Tv(state0,istate,idt))*sqrt(dP) / Sk
-						hop_p(istate) = hop_p(istate) + xkj * wk
-					endif
-				enddo
-			endif
-			!
-			rho_last = rho_f
+		! initial pop_p is the diagonal of rho_adiabat
+		rho_l = matmul( matmul(Ut(:,:,1), rho0), transpose(conjg(Ut(:,:,1))) )
+		do istate = 1, nstate
+			pop_p(istate,1) = dble(rho_l(istate,istate))
 		enddo
 		!
-		deallocate(rho_last)
+		hop_p = 0.d0
+		do idt = 1, nT-1
+			rho_f = matmul( matmul(Ut(:,:,idt+1), rho0), transpose(conjg(Ut(:,:,idt+1))) )
+			!
+			! calculate T_trans and hop_p
+			T_trans = 0.d0
+			do istate = 1, nstate
+				wk = dble( rho_l(istate,istate)-rho_f(istate,istate) ) / dble( rho_l(istate,istate) )
+				if (wk > 0.d0) then
+					!
+					! calculate Sk
+					Sk = 0.d0
+					do jstate = 1, nstate
+						if ( jstate .ne. istate) then
+							! Tv*dt is the T in the reference
+							Pdt = dble( rho_f(jstate,jstate)-rho_l(jstate,jstate) )
+							if ( Pdt > 0.d0 ) then
+								! dt is not necessary here, since Sk and xkj serve as a partition scheme
+								Sk = Sk + abs(Tv(istate,jstate,idt))*sqrt(Pdt)
+							endif
+						endif
+					enddo
+					!
+					! calculate xkj
+					do jstate = 1, nstate
+						if ( jstate .ne. istate) then
+							Pdt = dble( rho_f(jstate,jstate)-rho_l(jstate,jstate) )
+							if ( Pdt > 0.d0 ) then
+								xkj = abs(Tv(istate,jstate,idt))*sqrt(Pdt) / Sk
+								T_trans(istate,jstate) = xkj * wk / dt
+								if ( istate .eq. state0 ) hop_p(jstate) = hop_p(jstate) + xkj * wk
+							endif
+						endif
+					enddo
+				endif
+			enddo
+			!
+			! normalize Ti: if sum greater than 1
+			do istate = 1, nstate
+				if ( sum(T_trans(istate,:))*dt > 1.d0 ) T_trans(istate,:) = T_trans(istate,:) / ( sum(T_trans(istate,:))*dt )
+			enddo
+			!
+			p_trans = transpose(T_trans)
+			do istate = 1, nstate
+				p_trans(istate,istate) = p_trans(istate,istate) - sum(T_trans(istate,:))
+			enddo
+			!
+			! naive integration for dp = p_trans*p*dt
+			pop_p = pop_p + matmul(p_trans,pop_p)*dt
+			!
+			rho_l = rho_f
+		enddo
+		!
+		deallocate(rho_l,T_trans,p_trans)
 		!
 	end subroutine final_rho_hop_loc19
 	!
 	!
-	subroutine final_psi_hop_loc01(Ut, Tv, psi_f, hop_p, state0)
+	subroutine final_psi_hop_loc01(Ut, Tv, psi_f, hop_p, pop_p, state0)
 		! use given Ut, Tv and stored psi0 to calculate final psi and the 
 		! total hopping rate from state0 to all states
 		!
@@ -349,37 +468,70 @@ module benchmark_system
 		integer                        :: state0
 		!
 		complex(dp), allocatable       :: psi_f(:,:), psi_l(:,:), U_dt(:,:)
-		real(dp)   , allocatable       :: hop_p(:)
+		real(dp)   , allocatable       :: hop_p(:), pop_p(:,:)
 		!
+		real(dp)   , allocatable       :: T_trans(:,:), p_trans(:,:)
 		real(dp)                       :: drate
-		integer                        :: idt, istate
+		integer                        :: idt, istate, jstate
 		!
 		if ( allocated(psi_f) ) deallocate(psi_f)
 		if ( allocated(hop_p) ) deallocate(hop_p)
+		if ( allocated(pop_p) ) deallocate(pop_p)
 		allocate( psi_f(nstate,1) )
 		allocate( hop_p(nstate) )
+		allocate( pop_p(nstate,1) )
+		!
 		allocate( psi_l(nstate,1) )
 		allocate( U_dt(nstate,nstate) )
+		allocate( T_trans(nstate,nstate) )
+		allocate( p_trans(nstate,nstate) )
 		!
-		hop_p = 0.d0
 		psi_l(:,1) = psi0
 		psi_l = matmul(Ut(:,:,1), psi_l)
+		do istate = 1, nstate
+			pop_p(istate,1) = dble(psi_l(istate,1)*conjg(psi_l(istate,1)))
+		enddo
+		!
+		hop_p = 0.d0
 		do idt = 1, nT-1
 			U_dt = matmul( Ut(:,:,idt+1), transpose(conjg(Ut(:,:,idt))) )
 			psi_f = matmul(U_dt, psi_l)
+			!
+			T_trans = 0.d0
 			do istate = 1, nstate
-				if ( istate .ne. state0 ) then
-				drate = -dble( U_dt(state0,istate)*psi_l(istate,1)*conjg(psi_f(state0,1)) ) * &
-				         dble( psi_f(state0,1)*conjg(psi_f(state0,1)) - psi_l(state0,1)*conjg(psi_l(state0,1)) )
-				drate = drate / ( dble( psi_f(state0,1)*conjg(psi_f(state0,1)) ) - &
-				                  dble( U_dt(state0,state0)*psi_l(state0,1)*conjg(psi_f(state0,1)) ) )
-				if ( drate > 0.d0 ) hop_p(istate) = hop_p(istate) + drate/dble( psi_l(state0,1)*conjg(psi_l(state0,1)) )
-				endif
+				do jstate = 1, nstate
+					if ( jstate .ne. istate ) then
+						drate = -dble( U_dt(istate,jstate)*psi_l(jstate,1)*conjg(psi_f(istate,1)) ) * &
+						         dble( psi_f(istate,1)*conjg(psi_f(istate,1)) - psi_l(istate,1)*conjg(psi_l(istate,1)) )
+						drate = drate / ( dble( psi_f(istate,1)*conjg(psi_f(istate,1)) ) - &
+						                  dble( U_dt(istate,istate)*psi_l(istate,1)*conjg(psi_f(istate,1)) ) )
+						drate = drate/dble( psi_l(istate,1)*conjg(psi_l(istate,1)) )
+						!if ( drate > 1.d0 ) drate = 1.d0
+						if ( drate > 0.d0 ) then
+							T_trans(istate,jstate) = drate / dt
+							if ( istate .eq. state0 ) hop_p(jstate) = hop_p(jstate) + drate
+						endif
+					endif
+				enddo
 			enddo
+			!
+			! normalize Ti: if sum greater than 1
+			do istate = 1, nstate
+				if ( sum(T_trans(istate,:))*dt > 1.d0 ) T_trans(istate,:) = T_trans(istate,:) / ( sum(T_trans(istate,:))*dt )
+			enddo
+			!
+			p_trans = transpose(T_trans)
+			do istate = 1, nstate
+				p_trans(istate,istate) = p_trans(istate,istate) - sum(T_trans(istate,:))
+			enddo
+			!
+			! naive integration for dp = p_trans*p*dt
+			pop_p = pop_p + matmul(p_trans,pop_p)*dt
+			!
 			psi_l = psi_f
 		enddo
 		!
-		deallocate( psi_l,U_dt )
+		deallocate( psi_l,U_dt,T_trans,p_trans )
 		!
 	end subroutine final_psi_hop_loc01
 	!

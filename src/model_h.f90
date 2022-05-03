@@ -34,7 +34,7 @@ module model_H
 		!
 		H2(:,:) = 1.d-1
 		H2(1,1) = x
-		H2(2,2) = x + 1.d-1
+		H2(2,2) = x + 1.d-5
 		H2(3,3) = -x
 		!
 	end function H2
@@ -67,13 +67,13 @@ module model_H
 		!
 		Hn(:,:) = 1.d-1
 		Hn(1,1) = x
-		Hn(2,2) = x + 1.d-6
-		Hn(3,3) = x + 2.d-6
-		Hn(4,4) = x + 3.d-6
+		Hn(2,2) = x + 1.d-5
+		Hn(3,3) = x + 2.d-5
+		Hn(4,4) = x + 3.d-5
 		Hn(5,5) =-x
-		Hn(6,6) =-x + 1.d-6
-		Hn(7,7) =-x + 2.d-6
-		Hn(8,8) =-x + 3.d-6
+		Hn(6,6) =-x + 1.d-5
+		Hn(7,7) =-x + 2.d-5
+		Hn(8,8) =-x + 3.d-5
 		!
 	end function Hn
 	!
