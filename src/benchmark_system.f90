@@ -12,11 +12,11 @@ module benchmark_system
 	contains
 	!
 	!
-	subroutine assign_model(v_in, x_ini_in, x_fin_in, dt_in, H_diabat, nstate_in)
+	subroutine assign_model(v_in, x_ini_in, x_fin_in, dt_in, H_diabat, nstate_in, shift_in)
 		!
 		implicit none
 		!
-		real(dp) :: v_in, x_ini_in, x_fin_in, dt_in
+		real(dp) :: v_in, x_ini_in, x_fin_in, dt_in, shift_in
 		integer  :: nstate_in
 		!
 		! working variables
@@ -25,10 +25,11 @@ module benchmark_system
 		real(dp), allocatable :: S(:,:)
 		!
 		interface 
-			function H_diabat(x)
+			function H_diabat(x,sz,shift)
 				use iso_fortran_env, only: dp=> real64
 				implicit none
-				real(dp) :: x
+				real(dp) :: x, shift
+				integer  :: sz
 				real(dp), allocatable :: H_diabat(:,:)
 			end function
 		end interface
@@ -50,7 +51,7 @@ module benchmark_system
 		!
 		! diagonalize Hamiltonian to get eigenvector (U) and eigenvalue(E)
 		do idt = 1, nT
-			call diag_real( H_diabat(x_ini_in+v0*(idt-1)*dt), U(:,:,idt), E(:,idt) )
+			call diag_real( H_diabat(x_ini_in+v0*(idt-1)*dt,nstate,shift_in), U(:,:,idt), E(:,idt) )
 		enddo
 		!
 		! naive parallel transport of U followed by ZyZ's simplified algorithm
@@ -62,40 +63,40 @@ module benchmark_system
 				U(:,istate,idt) = U(:,istate,idt) * sign( 1.d0, dot_product(U(:,istate,idt-1),U(:,istate,idt)) )
 			enddo
 			!
-			! ZyZ's simplified algorithm
-			n_bad_diagonal = 0
-			S = matmul( transpose(U(:,:,idt-1)), U(:,:,idt) )
-			do istate = 1, nstate
-				if ( S(istate,istate) < 1.d0 - 2.d0 / nstate ) then
-					n_bad_diagonal = n_bad_diagonal+1
-					index_bad(n_bad_diagonal) = istate
-				endif
-			enddo
-			!
-			if ( n_bad_diagonal > 0 ) then
-				if ( mod(n_bad_diagonal,2) .eq. 0 ) then
-					! make the largest element in the last bad column negative
-					! then the rest of them are positive, just like having n_bad_diagonal - 1 bad ones
-					istate = index_bad(n_bad_diagonal)
-					imax = maxloc( S(:,istate), 1)
-					imin = minloc( S(:,istate), 1)
-					if ( S(imax,istate) + S(imin,istate) > 0 ) then
-						U(:,istate,idt) = -U(:,istate,idt)
-					endif
-					n_bad_diagonal = n_bad_diagonal - 1
-				endif
-				!
-				! all largest elements in the bad columns are positive
-				do istate = 1, n_bad_diagonal
-					jstate = index_bad(istate)
-					imax = maxloc( S(:,jstate), 1)
-					imin = minloc( S(:,jstate), 1)
-					if ( S(imax,jstate) + S(imin,jstate) < 0 ) then
-						U(:,istate,idt) = -U(:,istate,idt)
-					endif
-				enddo
-			endif
-			!
+			!! ZyZ's simplified algorithm
+			!n_bad_diagonal = 0
+			!S = matmul( transpose(U(:,:,idt-1)), U(:,:,idt) )
+			!do istate = 1, nstate
+			!	if ( S(istate,istate) < 1.d0 - 2.d0 / nstate ) then
+			!		n_bad_diagonal = n_bad_diagonal+1
+			!		index_bad(n_bad_diagonal) = istate
+			!	endif
+			!enddo
+			!!
+			!if ( n_bad_diagonal > 0 ) then
+			!	if ( mod(n_bad_diagonal,2) .eq. 0 ) then
+			!		! make the largest element in the last bad column negative
+			!		! then the rest of them are positive, just like having n_bad_diagonal - 1 bad ones
+			!		istate = index_bad(n_bad_diagonal)
+			!		imax = maxloc( S(:,istate), 1)
+			!		imin = minloc( S(:,istate), 1)
+			!		if ( S(imax,istate) + S(imin,istate) > 0 ) then
+			!			U(:,istate,idt) = -U(:,istate,idt)
+			!		endif
+			!		n_bad_diagonal = n_bad_diagonal - 1
+			!	endif
+			!	!
+			!	! all largest elements in the bad columns are positive
+			!	do istate = 1, n_bad_diagonal
+			!		jstate = index_bad(istate)
+			!		imax = maxloc( S(:,jstate), 1)
+			!		imin = minloc( S(:,jstate), 1)
+			!		if ( S(imax,jstate) + S(imin,jstate) < 0 ) then
+			!			U(:,istate,idt) = -U(:,istate,idt)
+			!		endif
+			!	enddo
+			!endif
+			!!
 		enddo
 		!
 		deallocate(index_bad,S)
@@ -702,6 +703,17 @@ module benchmark_system
 		!
 		do idt = 1,nT-1
 			write(*,'(I12,3(ES16.8,1X))') idt, Tv(2,1,idt), Tv(3,1,idt), Tv(3,2,idt)
+		enddo
+	end subroutine
+	!
+	subroutine test_E()
+		!
+		implicit none
+		!
+		integer                :: idt
+		!
+		do idt = 1,nT
+			write(*,'(7(ES16.8,1X))') idt*dt, E(:,idt)
 		enddo
 	end subroutine
 	!

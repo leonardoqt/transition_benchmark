@@ -2,8 +2,8 @@ program test
 	!
 	use benchmark_system,  only: assign_model, assign_psi, rho0, evo_npi, evo_hst, evo_loc01, nT, &
 	                             final_rho_hop, final_rho_hop_loc19, final_psi_hop_loc01, &
-	                             test_U, test_T
-	use model_H,           only: sz1, sz2, sz3, szn, H1, H2, H3, Hn
+	                             test_U, test_T, test_E
+	use model_H,           only: sz1, sz2, sz3, szn, H1, H2, H3, Hn, H_sys_rotate, H_sys_parallel, H_sys_mix
 	use iso_fortran_env,   only: dp=> real64
 	!
 	implicit none
@@ -14,7 +14,8 @@ program test
 	complex(dp), allocatable :: Ut(:,:,:), rho_f_npi(:,:), rho_f_hst(:,:), rho_f_loc(:,:), psi_f_loc(:,:)
 	!
 	real(dp)   , allocatable :: rho_diag_npi(:), rho_diag_hst(:), rho_diag_loc(:)
-	integer                  :: idt, state0 = 1, sz, istate
+	real(dp)                 :: dt, shift
+	integer                  :: idt, state0 = 1, imodel, sz, istate
 	character(len=100)       :: f_sz
 	!
 	!
@@ -24,8 +25,19 @@ program test
 	!call assign_model(1.0d0,-2.5d-1,2.5d-1,1.0d-6,H2,sz)
 	!sz = sz3
 	!call assign_model(1.0d0,-2.5d0,2.5d0,1.0d-2,H3,sz)
-	sz = szn
-	call assign_model(1.0d0,-2.5d-1,2.5d-1,1.0d-5,Hn,sz)
+	!sz = szn
+	!call assign_model(1.0d0,-2.5d-1,2.5d-1,1.0d-5,Hn,sz,0.d0)
+	!
+	read(*,*) imodel, sz, dt, shift
+	!
+	select case (imodel)
+		case(1)
+			call assign_model(1.0d0,-1.5d0,1.5d0,dt,H_sys_rotate,sz,shift)
+		case(2)
+			call assign_model(1.0d0,-1.5d0,1.5d0,dt,H_sys_parallel,sz,shift)
+		case(3)
+			call assign_model(1.0d0,-1.5d0,1.5d0,dt,H_sys_mix,sz,shift)
+	end select
 	!
 	allocate(psi(sz))
 	psi = 0.d0
@@ -90,4 +102,5 @@ program test
 	write(*,'("LOC01-1" '//adjustl(f_sz)//'(ES14.6,1X))') pop_p_loc01_1
 	write(*,'("LOC01-2" '//adjustl(f_sz)//'(ES14.6,1X))') pop_p_loc01_2
 	write(*,'("LOC19  " '//adjustl(f_sz)//'(ES14.6,1X))') pop_p_loc19
+	!call test_E
 end program test
