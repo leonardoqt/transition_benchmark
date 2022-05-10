@@ -21,7 +21,6 @@ module benchmark_system
 		!
 		! working variables
 		integer  :: idt, istate, jstate, n_bad_diagonal, imax, imin
-		integer , allocatable :: index_bad(:)
 		real(dp), allocatable :: S(:,:)
 		!
 		interface 
@@ -55,7 +54,6 @@ module benchmark_system
 		enddo
 		!
 		! naive parallel transport of U followed by ZyZ's simplified algorithm
-		allocate( index_bad(nstate) )
 		allocate( S(nstate,nstate) )
 		do idt = 2, nT
 			! naive parallel transport
@@ -63,43 +61,12 @@ module benchmark_system
 				U(:,istate,idt) = U(:,istate,idt) * sign( 1.d0, dot_product(U(:,istate,idt-1),U(:,istate,idt)) )
 			enddo
 			!
-			!! ZyZ's simplified algorithm
-			!n_bad_diagonal = 0
-			!S = matmul( transpose(U(:,:,idt-1)), U(:,:,idt) )
-			!do istate = 1, nstate
-			!	if ( S(istate,istate) < 1.d0 - 2.d0 / nstate ) then
-			!		n_bad_diagonal = n_bad_diagonal+1
-			!		index_bad(n_bad_diagonal) = istate
-			!	endif
-			!enddo
-			!!
-			!if ( n_bad_diagonal > 0 ) then
-			!	if ( mod(n_bad_diagonal,2) .eq. 0 ) then
-			!		! make the largest element in the last bad column negative
-			!		! then the rest of them are positive, just like having n_bad_diagonal - 1 bad ones
-			!		istate = index_bad(n_bad_diagonal)
-			!		imax = maxloc( S(:,istate), 1)
-			!		imin = minloc( S(:,istate), 1)
-			!		if ( S(imax,istate) + S(imin,istate) > 0 ) then
-			!			U(:,istate,idt) = -U(:,istate,idt)
-			!		endif
-			!		n_bad_diagonal = n_bad_diagonal - 1
-			!	endif
-			!	!
-			!	! all largest elements in the bad columns are positive
-			!	do istate = 1, n_bad_diagonal
-			!		jstate = index_bad(istate)
-			!		imax = maxloc( S(:,jstate), 1)
-			!		imin = minloc( S(:,jstate), 1)
-			!		if ( S(imax,jstate) + S(imin,jstate) < 0 ) then
-			!			U(:,istate,idt) = -U(:,istate,idt)
-			!		endif
-			!	enddo
-			!endif
-			!!
+			! ZY's scheme
+			S = matmul( transpose(U(:,:,idt-1)), U(:,:,idt) )
+			call ZY_correct_sign(S,U(:,:,idt))
 		enddo
 		!
-		deallocate(index_bad,S)
+		deallocate(S)
 		!
 	end subroutine assign_model
 	!
@@ -661,6 +628,58 @@ module benchmark_system
 		deallocate(vec,val,work,rwork)
 		!
 	end function expm
+	!
+	!
+	recursive subroutine ZY_check_depth(max_ind, istate, jstate, numdepth, ind_viewed)
+		implicit none
+		!
+		integer, dimension(:)     :: max_ind, ind_viewed
+		integer                   :: istate, jstate, numdepth
+		!
+		ind_viewed(istate) = 1
+		numdepth = numdepth + 1
+		if ( max_ind(istate) .ne. jstate ) call ZY_check_depth(max_ind,max_ind(istate),jstate,numdepth,ind_viewed)
+		!
+	end subroutine
+	!
+	subroutine ZY_correct_sign(S, U)
+		implicit none
+		!
+		real(dp), dimension(:,:)  :: S, U
+		!
+		integer , allocatable     :: max_ind(:), ind_viewed(:)
+		integer                   :: istate, numdepth
+		!
+		allocate( max_ind   (nstate) )
+		allocate( ind_viewed(nstate) )
+		!
+		do istate = 1, nstate
+			max_ind(istate) = maxloc( abs(S(:,istate)), 1)
+		enddo
+		!write(*,*) max_ind
+		!
+		ind_viewed = 0
+		do istate = 1, nstate
+			if ( ind_viewed(istate) .eq. 0 ) then
+				if ( max_ind(istate) .eq. istate ) then
+					ind_viewed(istate) = 1
+				else
+					numdepth = 1
+					call ZY_check_depth(max_ind,max_ind(istate),istate,numdepth,ind_viewed)
+					if ( mod(numdepth,2) .eq. 0 ) then
+						U(:,istate) = U(:,istate) * (-sign(1.d0, S(max_ind(istate),istate)) )
+					else
+						U(:,istate) = U(:,istate) *   sign(1.d0, S(max_ind(istate),istate))
+					endif
+				endif
+			else
+				U(:,istate) = U(:,istate) *   sign(1.d0, S(max_ind(istate),istate))
+			endif
+		enddo
+		!
+		deallocate(max_ind, ind_viewed)
+		!
+	end subroutine ZY_correct_sign
 	!
 	!
 	subroutine test_U()
