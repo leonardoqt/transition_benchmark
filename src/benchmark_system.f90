@@ -647,16 +647,41 @@ module benchmark_system
 		!
 		real(dp), dimension(:,:)  :: S, U
 		!
-		integer , allocatable     :: max_ind(:), ind_viewed(:)
-		integer                   :: istate, numdepth
+		integer , allocatable     :: max_ind(:), ind_viewed(:), max_ind1(:), max_ind2(:)
+		integer                   :: istate, jstate, numdepth, t_ind
+		real(dp), allocatable     :: absS(:,:), dmax(:)
 		!
 		allocate( max_ind   (nstate) )
+		allocate( max_ind1  (nstate) )
+		allocate( max_ind2  (nstate) )
 		allocate( ind_viewed(nstate) )
+		allocate( dmax      (nstate) )
+		allocate( absS(nstate,nstate))
 		!
-		do istate = 1, nstate
-			max_ind(istate) = maxloc( abs(S(:,istate)), 1)
+		absS = abs(S)
+		!write(*,'(8(1X,ES11.3))') absS
+		do jstate = 1,nstate
+			do istate = 1, nstate
+				max_ind1(istate) = maxloc( absS(:,istate), 1)
+				dmax(istate) = absS(max_ind1(istate),istate)
+				absS(max_ind1(istate),istate) = -1.d0
+				max_ind2(istate) = maxloc( absS(:,istate), 1)
+				absS(max_ind1(istate),istate) = dmax(istate)
+				dmax(istate) = dmax(istate) - absS(max_ind2(istate),istate)
+			enddo
+			t_ind = maxloc( dmax, 1)
+			!write(*,'(8(1X,ES11.3))') dmax
+			max_ind(t_ind) = max_ind1(t_ind)
+			absS(:,t_ind) = 0.d0
+			absS(max_ind(t_ind),:) = 0.d0
 		enddo
 		!write(*,*) max_ind
+		!write(*,'(8(1X,ES11.3))') transpose(abs(S))
+		!
+		!absS = abs(S)
+		!do istate = 1, nstate
+		!	max_ind(istate) = maxloc( absS(:,istate), 1)
+		!enddo
 		!
 		ind_viewed = 0
 		do istate = 1, nstate
@@ -677,7 +702,7 @@ module benchmark_system
 			endif
 		enddo
 		!
-		deallocate(max_ind, ind_viewed)
+		deallocate(max_ind,max_ind1,max_ind2, ind_viewed,dmax,absS)
 		!
 	end subroutine ZY_correct_sign
 	!
@@ -732,7 +757,7 @@ module benchmark_system
 		integer                :: idt
 		!
 		do idt = 1,nT
-			write(*,'(7(ES16.8,1X))') idt*dt, E(:,idt)
+			write(*,'(9(ES16.8,1X))') idt*dt, E(:,idt)
 		enddo
 	end subroutine
 	!
