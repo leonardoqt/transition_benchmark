@@ -1,6 +1,6 @@
 program test
 	!
-	use benchmark_system,  only: assign_model, assign_psi, rho0, evo_npi, evo_hst, evo_loc01, nT, &
+	use benchmark_system,  only: assign_model, assign_psi, rho0, evo_npi, evo_hst, evo_loc01, nT, evo_rho_diab, &
 	                             final_rho_hop, final_rho_hop_loc19, final_psi_hop_loc01, &
 	                             test_U, test_T, test_E
 	use model_H,           only: sz1, sz2, sz3, szn, H1, H2, H3, Hn, H_sys_rotate, H_sys_parallel, H_sys_mix
@@ -13,7 +13,7 @@ program test
 	                            pop_p_npi(:,:), pop_p_hst(:,:), pop_p_loc01_1(:,:), pop_p_loc01_2(:,:), pop_p_loc19(:,:)
 	complex(dp), allocatable :: Ut(:,:,:), rho_f_npi(:,:), rho_f_hst(:,:), rho_f_loc(:,:), psi_f_loc(:,:)
 	!
-	real(dp)   , allocatable :: rho_diag_npi(:), rho_diag_hst(:), rho_diag_loc(:)
+	real(dp)   , allocatable :: rho_diag_diab(:), rho_diag_npi(:), rho_diag_hst(:), rho_diag_loc(:)
 	real(dp)                 :: dt, shift
 	integer                  :: idt, state0 = 1, imodel, sz, istate
 	character(len=100)       :: f_sz
@@ -43,6 +43,7 @@ program test
 	psi = 0.d0
 	psi(state0) = 1.d0
 	call assign_psi(psi)
+	call evo_rho_diab(rho_diag_diab)
 	!
 	call evo_npi(Ut, Tv)
 	call final_rho_hop(Ut, Tv, rho_f_npi, hop_p_npi, pop_p_npi, state0)
@@ -91,6 +92,7 @@ program test
 	!write(*,*) ''
 	!
 	write(*,*) 'Final population from rho'
+	write(*,'("DIAB   " '//adjustl(f_sz)//'(ES14.6,1X))') rho_diag_diab
 	write(*,'("NPI    " '//adjustl(f_sz)//'(ES14.6,1X))') rho_diag_npi
 	write(*,'("HST    " '//adjustl(f_sz)//'(ES14.6,1X))') rho_diag_hst
 	write(*,'("LOC    " '//adjustl(f_sz)//'(ES14.6,1X))') rho_diag_loc

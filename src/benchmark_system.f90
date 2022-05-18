@@ -6,7 +6,7 @@ module benchmark_system
 	!
 	real(dp)  :: v0, dt
 	integer   :: nT, nstate
-	real(dp), allocatable :: U(:,:,:), E(:,:)
+	real(dp), allocatable :: U(:,:,:), E(:,:), H(:,:,:)
 	real(dp), allocatable :: psi0(:), rho0(:,:) ! rho is used in real calculation
 	!
 	contains
@@ -41,8 +41,10 @@ module benchmark_system
 		!
 		if ( allocated(U) ) deallocate(U)
 		if ( allocated(E) ) deallocate(E)
+		if ( allocated(H) ) deallocate(H)
 		allocate( U(nstate,nstate,nT) )
 		allocate( E(nstate,nT)        )
+		allocate( H(nstate,nstate,nT) )
 		if ( allocated(psi0) ) deallocate(psi0)
 		if ( allocated(rho0) ) deallocate(rho0)
 		allocate( psi0(nstate) )
@@ -50,7 +52,8 @@ module benchmark_system
 		!
 		! diagonalize Hamiltonian to get eigenvector (U) and eigenvalue(E)
 		do idt = 1, nT
-			call diag_real( H_diabat(x_ini_in+v0*(idt-1)*dt,nstate,shift_in), U(:,:,idt), E(:,idt) )
+			H(:,:,idt) = H_diabat(x_ini_in+v0*(idt-1)*dt,nstate,shift_in)
+			call diag_real( H(:,:,idt), U(:,:,idt), E(:,idt) )
 		enddo
 		!
 		! naive parallel transport of U followed by ZyZ's simplified algorithm
@@ -63,7 +66,7 @@ module benchmark_system
 			!
 			! ZY's scheme
 			S = matmul( transpose(U(:,:,idt-1)), U(:,:,idt) )
-			call ZY_correct_sign(S,U(:,:,idt))
+			call ZY_correct_sign_full(S,U(:,:,idt))
 		enddo
 		!
 		deallocate(S)
@@ -94,6 +97,48 @@ module benchmark_system
 		rho0 = rho_in
 		!
 	end subroutine
+	!
+	!
+	subroutine evo_rho_diab(rho_f)
+		! it generates Ut and Tv rate, such that Ut*rho_diabat*Ut^\dagger is rho(t)_adiabats
+		! and Tv*dt is the hopping rate
+		!
+		implicit none
+		!
+		real(dp)   , allocatable :: rho_f(:)
+		!
+		complex(dp), allocatable :: Ut(:,:), U_dt(:,:), iHTdt(:,:), rho_full(:,:)
+		integer :: idt, istate
+		!
+		!
+		if ( allocated(rho_f) ) deallocate(rho_f)
+		allocate( rho_f(nstate) )
+		!
+		allocate(    Ut(nstate,nstate) )
+		allocate(  U_dt(nstate,nstate) )
+		allocate( iHTdt(nstate,nstate) )
+		allocate( rho_full(nstate,nstate) )
+		!
+		Ut = (0.d0, 0.d0)
+		do istate = 1,nstate
+			Ut(istate,istate) = (1.d0, 0.d0)
+		enddo
+		!
+		do idt = 1, nT-1
+			iHTdt = cmplx( H(:,:,1)*0.d0, -dt/2*(H(:,:,idt)+H(:,:,idt+1)), dp )
+			U_dt = expm(iHTdt)
+			Ut = matmul(U_dt, Ut)
+		enddo
+		Ut = matmul( transpose( U(:,:,nT) ), Ut)
+		rho_full = matmul( matmul(Ut, rho0), conjg(transpose(Ut)) )
+		!
+		do istate = 1,nstate
+			rho_f(istate) = dble( rho_full(istate,istate) )
+		enddo
+		!
+		deallocate(Ut,U_dt,iHTdt,rho_full)
+		!
+	end subroutine evo_rho_diab
 	!
 	!
 	!
@@ -705,6 +750,35 @@ module benchmark_system
 		deallocate(max_ind,max_ind1,max_ind2, ind_viewed,dmax,absS)
 		!
 	end subroutine ZY_correct_sign
+	
+	subroutine ZY_correct_sign_full(S, U)
+		implicit none
+		!
+		real(dp), dimension(:,:)  :: S, U
+		!
+		integer                   :: istate, jstate, nochange
+		real(dp)                  :: dtr
+		!
+		nochange = 0
+		do while ( nochange .ne. 1 )
+			nochange = 1
+			do istate = 1, nstate - 1
+				do jstate = istate+1, nstate
+					dtr = 3*( S(istate,istate)**2 + S(jstate,jstate)**2 ) + 6*S(istate,jstate)*S(jstate,istate) &
+					      + 8*( S(istate,istate)+S(jstate,jstate) ) &
+					      - 3*( dot_product(S(istate,:),S(:,istate))+dot_product(S(jstate,:),S(:,jstate)) )
+					if ( dtr < 0.d0 ) then
+						S(:,istate) = -S(:,istate)
+						S(:,jstate) = -S(:,jstate)
+						U(:,istate) = -U(:,istate)
+						U(:,jstate) = -U(:,jstate)
+						nochange = 0
+					endif
+				enddo
+			enddo
+		enddo
+		!
+	end subroutine ZY_correct_sign_full
 	!
 	!
 	subroutine test_U()
@@ -755,9 +829,11 @@ module benchmark_system
 		implicit none
 		!
 		integer                :: idt
+		character(len=100)     :: f_sz
 		!
+		write(f_sz,*) nstate+1
 		do idt = 1,nT
-			write(*,'(9(ES16.8,1X))') idt*dt, E(:,idt)
+			write(101,'('//adjustl(f_sz)//'(ES16.8,1X))') idt*dt, E(:,idt)
 		enddo
 	end subroutine
 	!
