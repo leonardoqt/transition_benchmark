@@ -675,6 +675,43 @@ module benchmark_system
 	end function expm
 	!
 	!
+	function det_U(A_in)
+		! A is real-orthonormal matrix
+		!
+		implicit none
+		!
+		real(dp), dimension(:,:) :: A_in
+		real(dp), allocatable    :: A(:,:)
+		real(dp)                 :: det_U
+		!
+		! working variables
+		real(dp), allocatable :: wr(:),wi(:),vl(:,:),vr(:,:),work(:)
+		integer :: lwork, err_msg, istate
+		!
+		!
+		lwork = (4*nstate)*3
+		!
+		allocate( A(nstate,nstate) )
+		!
+		allocate( wr(nstate) )
+		allocate( wi(nstate) )
+		allocate( vl(nstate,nstate) )
+		allocate( vr(nstate,nstate) )
+		allocate( work(lwork) )
+		!
+		A = A_in
+		call dgeev('N','V',nstate,A,nstate,wr,wi,vl,nstate,vr,nstate,work,lwork,err_msg)
+		!
+		det_U = 1.d0
+		do istate = 1,nstate
+			if ( abs(wi(istate)) < 1.d-10 ) det_U = det_U * wr(istate)
+		enddo
+		!
+		deallocate(A,wr,wi,vl,vr,work)
+		!
+	end function det_U
+	!
+	!
 	recursive subroutine ZY_check_depth(max_ind, istate, jstate, numdepth, ind_viewed)
 		implicit none
 		!
@@ -758,6 +795,12 @@ module benchmark_system
 		!
 		integer                   :: istate, jstate, nochange
 		real(dp)                  :: dtr
+		!
+		dtr = det_U(S)
+		if ( dtr < 0.d0 ) then
+			S(:,1) = - S(:,1)
+			U(:,1) = - U(:,1)
+		endif
 		!
 		nochange = 0
 		do while ( nochange .ne. 1 )
