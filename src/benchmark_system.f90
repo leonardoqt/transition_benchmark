@@ -310,7 +310,7 @@ module benchmark_system
 		real(dp)   , dimension(:,:,:)  :: Tv
 		integer                        :: state0
 		!
-		complex(dp), allocatable       :: rho_f(:,:)
+		complex(dp), allocatable       :: rho_f(:,:), rho_m(:,:), U_dt(:,:), U_dt2(:,:)
 		real(dp)   , allocatable       :: hop_p(:), pop_p(:,:)
 		!
 		real(dp)                       :: drate
@@ -324,6 +324,9 @@ module benchmark_system
 		allocate( hop_p(nstate) )
 		allocate( pop_p(nstate,1) )
 		!
+		allocate( rho_m(nstate,nstate) )
+		allocate(  U_dt(nstate,nstate) )
+		allocate( U_dt2(nstate,nstate) )
 		allocate( T_trans(nstate,nstate) )
 		allocate( p_trans(nstate,nstate) )
 		!
@@ -336,10 +339,13 @@ module benchmark_system
 		hop_p = 0.d0
 		do idt = 1, nT-1
 			rho_f = matmul( matmul(Ut(:,:,idt+1), rho0), transpose(conjg(Ut(:,:,idt+1))) )
+			U_dt = matmul( Ut(:,:,idt+1), transpose(conjg( Ut(:,:,idt) )) )
+			U_dt2 = sqrtm(U_dt)
+			rho_m = matmul( matmul(transpose(conjg(U_dt2)), rho_f), U_dt2 )
 			!
 			! for calculating hop_p
 			do istate = 1, nstate
-				drate = 2 * dble( Tv(state0,istate,idt)*rho_f(istate,state0) ) / dble( rho_f(state0,state0) ) * dt
+				drate = 2 * dble( Tv(state0,istate,idt)*rho_m(istate,state0) ) / dble( rho_f(state0,state0) + 1.d-13) * dt
 				!if ( drate > 1.d0 ) drate = 1.d0
 				if ( drate > 0.d0 ) hop_p(istate) = hop_p(istate) + drate
 			enddo
@@ -350,7 +356,7 @@ module benchmark_system
 			do istate = 1, nstate
 				do jstate = 1, nstate
 					if ( jstate .ne. istate ) then
-						drate = 2 * dble( Tv(istate,jstate,idt)*rho_f(jstate,istate) ) / dble( rho_f(istate,istate) )
+						drate = 2 * dble( Tv(istate,jstate,idt)*rho_m(jstate,istate) ) / dble( rho_f(istate,istate) + 1.d-13)
 						!if ( drate*dt > 1.d0 ) drate = 1.d0/dt
 						if ( drate > 0.d0 ) T_trans(istate,jstate) = drate
 					endif
@@ -371,7 +377,7 @@ module benchmark_system
 			pop_p = pop_p + matmul(p_trans,pop_p)*dt
 		enddo
 		!
-		deallocate(T_trans,p_trans)
+		deallocate(rho_m,U_dt,U_dt2,T_trans,p_trans)
 		!
 	end subroutine final_rho_hop
 	!
@@ -667,6 +673,48 @@ module benchmark_system
 		deallocate(vec,val,work,rwork)
 		!
 	end function expm
+	!
+	!
+	function sqrtm(A_in)
+		! A is unitary matrix
+		!
+		implicit none
+		!
+		complex(dp), dimension(:,:) :: A_in
+		complex(dp), allocatable    :: A(:,:), sqrtm(:,:)
+		!
+		! working variables
+		complex(dp), allocatable :: ww(:),vl(:,:),vr(:,:),work(:)
+		real(dp)   , allocatable :: rwork(:)
+		complex(dp), allocatable :: sqrtw(:,:) ! A = vec1*w*vec2^\dagger
+		integer :: lwork, err_msg, istate
+		!
+		!
+		lwork = (2*nstate)*3
+		!
+		allocate( A(nstate,nstate) )
+		allocate( sqrtm(nstate,nstate) )
+		!
+		allocate( ww(nstate) )
+		allocate( vl(nstate,nstate) )
+		allocate( vr(nstate,nstate) )
+		allocate( work(lwork) )
+		allocate( rwork(2*nstate) )
+		!
+		A = A_in
+		call zgeev('N','V',nstate,A,nstate,ww,vl,nstate,vr,nstate,work,lwork,rwork,err_msg)
+		!
+		allocate( sqrtw(nstate,nstate) )
+		sqrtw = ( 0.d0, 0.d0 )
+		do istate = 1,nstate
+			sqrtw(istate,istate) = sqrt(ww(istate))
+		enddo
+		!
+		sqrtm = matmul( matmul(vr, sqrtw), transpose(conjg(vr)) )
+		!
+		deallocate(ww,vl,vr,work,rwork,A,sqrtw)
+		!
+	end function sqrtm
 	!
 	!
 	function det_U(A_in)
