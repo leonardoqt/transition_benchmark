@@ -66,7 +66,8 @@ module benchmark_system
 			!
 			! ZY's scheme
 			S = matmul( transpose(U(:,:,idt-1)), U(:,:,idt) )
-			call ZY_correct_sign_full(S,U(:,:,idt))
+			!call ZY_correct_sign_full(S,U(:,:,idt))
+			call correct_sign_bruteforce(S,U(:,:,idt))
 		enddo
 		!
 		deallocate(S)
@@ -584,7 +585,7 @@ module benchmark_system
 		!
 		! working variables
 		real(dp), allocatable :: wr(:),wi(:),vl(:,:),vr(:,:),work(:),zeros(:)
-		complex(dp), allocatable :: cwork(:), vec1(:,:), vec2(:,:), logw(:,:) ! A = vec1*w*vec2^\dagger
+		complex(dp), allocatable :: vec1(:,:), vec2(:,:), logw(:,:) ! A = vec1*w*vec2^\dagger
 		integer :: lwork, err_msg, incr, istate, jstate
 		integer, allocatable :: ipiv(:)
 		!
@@ -623,17 +624,10 @@ module benchmark_system
 		enddo
 		!
 		vec2 = transpose(conjg(vec1))
-		!lwork = nstate * 3
-		!allocate( cwork(lwork) )
-		!allocate( ipiv(nstate) )
-		!call zgetrf(nstate,nstate,vec2,nstate,ipiv,err_msg)
-		!call zgetri(nstate,vec2,nstate,ipiv,cwork,lwork,err_msg)
 		!
 		logm = dble(matmul(matmul(vec1,logw),vec2))
 		logm = ( logm - transpose(logm) )/2
-		!write(*,'(3(ES12.4,1X))') logm
 		!
-		!deallocate(wr,wi,vl,vr,work,zeros,A,vec1,vec2,logw,cwork,ipiv)
 		deallocate(wr,wi,vl,vr,work,zeros,A,vec1,vec2,logw)
 		!
 	end function logm
@@ -712,6 +706,46 @@ module benchmark_system
 	end function det_U
 	!
 	!
+	function TrlogU2(A_in)
+		! A is real-orthonormal matrix
+		!
+		implicit none
+		!
+		real(dp), dimension(:,:) :: A_in
+		real(dp), allocatable    :: A(:,:)
+		real(dp)                 :: TrlogU2
+		!
+		! working variables
+		real(dp), allocatable :: wr(:),wi(:),vl(:,:),vr(:,:),work(:)
+		complex(dp)           :: wri
+		integer :: lwork, err_msg, istate
+		integer, allocatable :: ipiv(:)
+		!
+		!
+		lwork = (4*nstate)*3
+		!
+		allocate( A(nstate,nstate) )
+		!
+		allocate( wr(nstate) )
+		allocate( wi(nstate) )
+		allocate( vl(nstate,nstate) )
+		allocate( vr(nstate,nstate) )
+		allocate( work(lwork) )
+		!
+		A = A_in
+		call dgeev('N','V',nstate,A,nstate,wr,wi,vl,nstate,vr,nstate,work,lwork,err_msg)
+		!
+		TrlogU2 = 0.d0
+		do istate = 1,nstate
+			wri = cmplx( wr(istate), wi(istate), dp )
+			TrlogU2 = TrlogU2 + abs(log(wri))**2
+		enddo
+		!
+		deallocate(wr,wi,vl,vr,work,A)
+		!
+	end function TrlogU2
+	!
+	!
 	recursive subroutine ZY_check_depth(max_ind, istate, jstate, numdepth, ind_viewed)
 		implicit none
 		!
@@ -787,7 +821,8 @@ module benchmark_system
 		deallocate(max_ind,max_ind1,max_ind2, ind_viewed,dmax,absS)
 		!
 	end subroutine ZY_correct_sign
-	
+	!
+	!
 	subroutine ZY_correct_sign_full(S, U)
 		implicit none
 		!
@@ -822,6 +857,43 @@ module benchmark_system
 		enddo
 		!
 	end subroutine ZY_correct_sign_full
+	!
+	!
+	subroutine correct_sign_bruteforce(S, U)
+		implicit none
+		!
+		real(dp), dimension(:,:)  :: S, U
+		real(dp), allocatable     :: S_t(:,:), U_t(:,:), U_best(:,:)
+		real(dp)                  :: f_t, f_best
+		integer                   :: iter, jter, pow, ndigit
+		!
+		allocate( S_t(nstate,nstate) )
+		allocate( U_t(nstate,nstate) )
+		allocate( U_best(nstate,nstate) )
+		!
+		f_best = 1.d100
+		do iter = 0, 2**nstate - 1
+			S_t = S
+			U_t = U
+			jter = iter
+			do ndigit = nstate-1,0,-1
+				pow = jter / (2**ndigit)
+				jter = mod(jter, 2**ndigit)
+				S_t(:,ndigit+1) = ( (-1)**pow )*S_t(:,ndigit+1)
+				U_t(:,ndigit+1) = ( (-1)**pow )*U_t(:,ndigit+1)
+			enddo
+			!
+			f_t = TrlogU2(S_t)
+			if ( f_t < f_best ) then
+				f_best = f_t
+				U_best = U_t
+			endif
+		enddo
+		U = U_best
+		!
+		deallocate( S_t,U_t,U_best)
+		!
+	end subroutine correct_sign_bruteforce
 	!
 	!
 	subroutine test_U()
