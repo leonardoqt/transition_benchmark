@@ -1,6 +1,7 @@
 program test
 	!
-	use benchmark_system,  only: assign_model, assign_psi, rho0, evo_npi, evo_hst, evo_loc01, nT, evo_rho_diab, &
+	use benchmark_system,  only: assign_model, assign_psi, rho0, Uini, nT, &
+	                             evo_npi, evo_hst, evo_loc01, evo_rho_diab, &
 	                             final_rho_hop, final_rho_hop_loc19, final_psi_hop_loc01, &
 	                             test_U, test_T, test_E!, ZY_correct_sign_full, nstate
 	use model_H,           only: sz1, sz2, sz3, szn, H1, H2, H3, Hn, H_sys_rotate, H_sys_parallel, H_sys_mix
@@ -14,8 +15,9 @@ program test
 	complex(dp), allocatable :: Ut(:,:,:), rho_f_npi(:,:), rho_f_hst(:,:), rho_f_loc(:,:), psi_f_loc(:,:)
 	!
 	real(dp)   , allocatable :: rho_diag_diab(:), rho_diag_npi(:), rho_diag_hst(:), rho_diag_loc(:)
+	real(dp)   , allocatable :: aux_vec(:,:)
 	real(dp)                 :: dt, shift
-	integer                  :: idt, state0 = 1, imodel, sz, istate
+	integer                  :: idt, imodel, sz, istate, ini_type
 	character(len=100)       :: f_sz
 	!
 	!!!!!!!!!!!!!!!!!!!!!
@@ -38,7 +40,7 @@ program test
 	!stop
 	!!!!!!!!!!!!!!!!!!!!!
 	!
-	read(*,*) imodel, sz, dt, shift
+	read(*,*) imodel, ini_type, sz, dt, shift
 	!
 	select case (imodel)
 		case(1)
@@ -50,20 +52,38 @@ program test
 	end select
 	!
 	allocate(psi(sz))
+	allocate(aux_vec(sz,1))
 	psi = 0.d0
-	psi(state0) = 1.d0
+	aux_vec = 0.d0
+	select case (ini_type)
+		case(0)
+			! ground diabats
+			psi(1) = 1.d0
+		case(1)
+			! ground adiabats
+			aux_vec(1,1) = 1.d0
+			aux_vec = matmul(Uini, aux_vec)
+			psi = aux_vec(:,1)
+		case(2)
+			! all adiabats
+			do istate = 1, sz
+				aux_vec(istate,1) = 1.d0/sqrt(sz*1.d0)
+			enddo
+			aux_vec = matmul(Uini, aux_vec)
+			psi = aux_vec(:,1)
+	end select
 	call assign_psi(psi)
 	call evo_rho_diab(rho_diag_diab)
 	!
 	call evo_npi(Ut, Tv)
-	call final_rho_hop(Ut, Tv, rho_f_npi, hop_p_npi, pop_p_npi, state0)
+	call final_rho_hop(Ut, Tv, rho_f_npi, hop_p_npi, pop_p_npi, 1)
 	!!call test_U()
 	call evo_hst(Ut, Tv)
-	call final_rho_hop(Ut, Tv, rho_f_hst, hop_p_hst, pop_p_hst, state0)
+	call final_rho_hop(Ut, Tv, rho_f_hst, hop_p_hst, pop_p_hst, 1)
 	call evo_loc01(Ut, Tv)
-	call final_rho_hop(Ut, Tv, rho_f_loc, hop_p_loc01_1, pop_p_loc01_1, state0)
-	call final_psi_hop_loc01(Ut, Tv, psi_f_loc, hop_p_loc01_2, pop_p_loc01_2, state0)
-	call final_rho_hop_loc19(Ut, Tv, rho_f_loc, hop_p_loc19, pop_p_loc19, state0)
+	call final_rho_hop(Ut, Tv, rho_f_loc, hop_p_loc01_1, pop_p_loc01_1, 1)
+	call final_psi_hop_loc01(Ut, Tv, psi_f_loc, hop_p_loc01_2, pop_p_loc01_2, 1)
+	call final_rho_hop_loc19(Ut, Tv, rho_f_loc, hop_p_loc19, pop_p_loc19, 1)
 	!
 	! use final rho of NPI as reference
 	allocate(rho_diag_npi(sz))

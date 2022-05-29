@@ -6,7 +6,7 @@ module benchmark_system
 	!
 	real(dp)  :: v0, dt
 	integer   :: nT, nstate
-	real(dp), allocatable :: U(:,:,:), E(:,:), H(:,:,:)
+	real(dp), allocatable :: U(:,:,:), E(:,:), H(:,:,:), Uini(:,:)
 	real(dp), allocatable :: psi0(:), rho0(:,:) ! rho is used in real calculation
 	!
 	contains
@@ -42,9 +42,11 @@ module benchmark_system
 		if ( allocated(U) ) deallocate(U)
 		if ( allocated(E) ) deallocate(E)
 		if ( allocated(H) ) deallocate(H)
+		if ( allocated(Uini) ) deallocate(Uini)
 		allocate( U(nstate,nstate,nT) )
 		allocate( E(nstate,nT)        )
 		allocate( H(nstate,nstate,nT) )
+		allocate( Uini(nstate,nstate) )
 		if ( allocated(psi0) ) deallocate(psi0)
 		if ( allocated(rho0) ) deallocate(rho0)
 		allocate( psi0(nstate) )
@@ -55,6 +57,7 @@ module benchmark_system
 			H(:,:,idt) = H_diabat(x_ini_in+v0*(idt-1)*dt,nstate,shift_in)
 			call diag_real( H(:,:,idt), U(:,:,idt), E(:,idt) )
 		enddo
+		Uini = U(:,:,1)
 		!
 		! naive parallel transport of U followed by ZyZ's simplified algorithm
 		allocate( S(nstate,nstate) )
@@ -66,8 +69,8 @@ module benchmark_system
 			!
 			! ZY's scheme
 			S = matmul( transpose(U(:,:,idt-1)), U(:,:,idt) )
-			!call ZY_correct_sign_full(S,U(:,:,idt))
-			call correct_sign_bruteforce(S,U(:,:,idt))
+			call ZY_correct_sign_full(S,U(:,:,idt))
+			!call correct_sign_bruteforce(S,U(:,:,idt))
 		enddo
 		!
 		deallocate(S)
