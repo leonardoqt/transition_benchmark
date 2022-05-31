@@ -2,7 +2,7 @@ program test
 	!
 	use benchmark_system,  only: assign_model, assign_psi, rho0, Uini, nT, &
 	                             evo_npi, evo_hst, evo_loc01, evo_rho_diab, &
-	                             final_rho_hop, final_rho_hop_loc19, final_psi_hop_loc01, &
+	                             final_rho_hop, final_rho_hop_loc19, final_psi_hop_loc01, final_psi_hop_loc01_alter, &
 	                             test_U, test_T, test_E!, ZY_correct_sign_full, nstate
 	use model_H,           only: sz1, sz2, sz3, szn, H1, H2, H3, Hn, H_sys_rotate, H_sys_parallel, H_sys_mix
 	use iso_fortran_env,   only: dp=> real64
@@ -82,7 +82,8 @@ program test
 	call final_rho_hop(Ut, Tv, rho_f_hst, hop_p_hst, pop_p_hst, 1)
 	call evo_loc01(Ut, Tv)
 	call final_rho_hop(Ut, Tv, rho_f_loc, hop_p_loc01_1, pop_p_loc01_1, 1)
-	call final_psi_hop_loc01(Ut, Tv, psi_f_loc, hop_p_loc01_2, pop_p_loc01_2, 1)
+	!call final_psi_hop_loc01(Ut, Tv, psi_f_loc, hop_p_loc01_2, pop_p_loc01_2, 1)
+	call final_psi_hop_loc01_alter(Ut, Tv, psi_f_loc, hop_p_loc01_2, pop_p_loc01_2, 1)
 	call final_rho_hop_loc19(Ut, Tv, rho_f_loc, hop_p_loc19, pop_p_loc19, 1)
 	!
 	! use final rho of NPI as reference

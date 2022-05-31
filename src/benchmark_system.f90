@@ -62,15 +62,16 @@ module benchmark_system
 		! naive parallel transport of U followed by ZyZ's simplified algorithm
 		allocate( S(nstate,nstate) )
 		do idt = 2, nT
-			! naive parallel transport
-			do istate = 1, nstate
-				U(:,istate,idt) = U(:,istate,idt) * sign( 1.d0, dot_product(U(:,istate,idt-1),U(:,istate,idt)) )
-			enddo
-			!
-			! ZY's scheme
-			S = matmul( transpose(U(:,:,idt-1)), U(:,:,idt) )
-			call ZY_correct_sign_full(S,U(:,:,idt))
-			!call correct_sign_bruteforce(S,U(:,:,idt))
+			!! naive parallel transport
+			!do istate = 1, nstate
+			!	U(:,istate,idt) = U(:,istate,idt) * sign( 1.d0, dot_product(U(:,istate,idt-1),U(:,istate,idt)) )
+			!enddo
+			!!
+			!! ZY's scheme
+			!S = matmul( transpose(U(:,:,idt-1)), U(:,:,idt) )
+			!call ZY_correct_sign_full(S,U(:,:,idt))
+			!!call correct_sign_bruteforce(S,U(:,:,idt))
+			call rand_sign(U(:,:,idt))
 		enddo
 		!
 		deallocate(S)
@@ -560,6 +561,82 @@ module benchmark_system
 	!
 	!
 	!
+	subroutine final_psi_hop_loc01_alter(Ut, Tv, psi_f, hop_p, pop_p, state0)
+		! use given Ut, Tv and stored psi0 to calculate final psi and the 
+		! total hopping rate from state0 to all states
+		!
+		implicit none
+		!
+		complex(dp), dimension(:,:,:)  :: Ut
+		real(dp)   , dimension(:,:,:)  :: Tv
+		integer                        :: state0
+		!
+		complex(dp), allocatable       :: psi_f(:,:), psi_l(:,:), U_dt(:,:)
+		real(dp)   , allocatable       :: hop_p(:), pop_p(:,:)
+		!
+		real(dp)   , allocatable       :: T_trans(:,:), p_trans(:,:)
+		real(dp)                       :: drate
+		integer                        :: idt, istate, jstate
+		!
+		if ( allocated(psi_f) ) deallocate(psi_f)
+		if ( allocated(hop_p) ) deallocate(hop_p)
+		if ( allocated(pop_p) ) deallocate(pop_p)
+		allocate( psi_f(nstate,1) )
+		allocate( hop_p(nstate) )
+		allocate( pop_p(nstate,1) )
+		!
+		allocate( psi_l(nstate,1) )
+		allocate( U_dt(nstate,nstate) )
+		allocate( T_trans(nstate,nstate) )
+		allocate( p_trans(nstate,nstate) )
+		!
+		psi_l(:,1) = psi0
+		psi_l = matmul(Ut(:,:,1), psi_l)
+		do istate = 1, nstate
+			pop_p(istate,1) = dble(psi_l(istate,1)*conjg(psi_l(istate,1)))
+		enddo
+		!
+		hop_p = 0.d0
+		do idt = 1, nT-1
+			U_dt = matmul( Ut(:,:,idt+1), transpose(conjg(Ut(:,:,idt))) )
+			psi_f = matmul(U_dt, psi_l)
+			!
+			T_trans = 0.d0
+			do istate = 1, nstate
+				do jstate = 1, nstate
+					if ( jstate .ne. istate ) then
+						drate = 2*dble( Tv(istate,jstate,idt)*psi_f(jstate,1)*conjg(psi_l(istate,1)) ) / &
+						        dble(psi_f(istate,1)*conjg(psi_f(istate,1)) + 1.d-13)
+						if ( drate > 0.d0 ) then
+							T_trans(istate,jstate) = drate
+							if ( istate .eq. state0 ) hop_p(jstate) = hop_p(jstate) + drate
+						endif
+					endif
+				enddo
+			enddo
+			!
+			! normalize Ti: if sum greater than 1
+			do istate = 1, nstate
+				if ( sum(T_trans(istate,:))*dt > 1.d0 ) T_trans(istate,:) = T_trans(istate,:) / ( sum(T_trans(istate,:))*dt )
+			enddo
+			!
+			p_trans = transpose(T_trans)
+			do istate = 1, nstate
+				p_trans(istate,istate) = p_trans(istate,istate) - sum(T_trans(istate,:))
+			enddo
+			!
+			! naive integration for dp = p_trans*p*dt
+			pop_p = pop_p + matmul(p_trans,pop_p)*dt
+			!
+			psi_l = psi_f
+		enddo
+		!
+		deallocate( psi_l,U_dt,T_trans,p_trans )
+		!
+	end subroutine final_psi_hop_loc01_alter
+	!
+	!
+	!
 	subroutine diag_real(H_in, vec, val)
 		!
 		implicit none
@@ -945,6 +1022,18 @@ module benchmark_system
 		deallocate( S_t,U_t,U_best)
 		!
 	end subroutine correct_sign_bruteforce
+	!
+	!
+	subroutine rand_sign(U)
+		implicit none
+		!
+		real(dp), dimension(:,:)  :: U
+		integer                   :: istate
+		!
+		do istate = 1, nstate
+			if (rand(0) < 0.5d0) U(:,istate) = -U(:,istate)
+		enddo
+	end subroutine
 	!
 	!
 	subroutine test_U()
