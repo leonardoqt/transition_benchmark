@@ -81,6 +81,32 @@ module model_H
 		!
 	end function Hn
 	!
+	!
+	function H_sys_single(x,sz,shift)
+		!
+		implicit none
+		!
+		real(dp)  :: x, shift
+		integer   :: sz
+		real(dp), allocatable :: H_sys_single(:,:)
+		!
+		real(dp)  :: x_shift
+		integer   :: t1
+		!
+		allocate(H_sys_single(sz,sz))
+		!
+		x_shift = 0.05555555555d0
+		!
+		H_sys_single = 0.d0
+		H_sys_single(2,2) = - (x-x_shift) - shift
+		do t1 = 3, sz
+			H_sys_single(t1,t1) = (x-x_shift) + (t1-2)*shift
+			H_sys_single(2,t1)  = 1.d-1 / sqrt(sz*1.d0)
+			H_sys_single(t1,2)  = 1.d-1 / sqrt(sz*1.d0)
+		enddo
+		!
+	end function H_sys_single
+	!
 	function H_sys_rotate(x,sz,shift)
 		!
 		implicit none
