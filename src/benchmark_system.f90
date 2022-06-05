@@ -62,16 +62,16 @@ module benchmark_system
 		! naive parallel transport of U followed by ZyZ's simplified algorithm
 		allocate( S(nstate,nstate) )
 		do idt = 2, nT
-			!! naive parallel transport
-			!do istate = 1, nstate
-			!	U(:,istate,idt) = U(:,istate,idt) * sign( 1.d0, dot_product(U(:,istate,idt-1),U(:,istate,idt)) )
-			!enddo
-			!!
-			!! ZY's scheme
-			!S = matmul( transpose(U(:,:,idt-1)), U(:,:,idt) )
-			!call ZY_correct_sign_full(S,U(:,:,idt))
-			!!call correct_sign_bruteforce(S,U(:,:,idt))
-			call rand_sign(U(:,:,idt))
+			! naive parallel transport
+			do istate = 1, nstate
+				U(:,istate,idt) = U(:,istate,idt) * sign( 1.d0, dot_product(U(:,istate,idt-1),U(:,istate,idt)) )
+			enddo
+			!
+			! ZY's scheme
+			S = matmul( transpose(U(:,:,idt-1)), U(:,:,idt) )
+			call ZY_correct_sign_full(S,U(:,:,idt))
+			!call correct_sign_bruteforce(S,U(:,:,idt))
+			!call rand_sign(U(:,:,idt))
 		enddo
 		!
 		deallocate(S)
@@ -187,6 +187,53 @@ module benchmark_system
 		deallocate(U_dt,iHTdt)
 		!
 	end subroutine evo_npi
+	!
+	subroutine evo_npi_interp(Ut, Tv, nqT)
+		! it generates Ut and Tv rate, such that Ut*rho_diabat*Ut^\dagger is rho(t)_adiabats
+		! and Tv*dt is the hopping rate
+		!
+		implicit none
+		!
+		complex(dp), allocatable :: Ut(:,:,:)
+		real(dp)   , allocatable :: Tv(:,:,:)
+		integer                  :: nqT ! number of quantum time steps in each ionic time step
+		!
+		complex(dp), allocatable :: U_dt(:,:), iHTdt(:,:)
+		integer :: idt, iqt, istate
+		!
+		!
+		if ( allocated(Ut) ) deallocate(Ut)
+		if ( allocated(Tv) ) deallocate(Tv)
+		allocate( Ut(nstate,nstate,(nT-1)*nqT+1 ) )
+		allocate( Tv(nstate,nstate,(nT-1)*nqT   ) )
+		!
+		allocate(  U_dt(nstate,nstate) )
+		allocate( iHTdt(nstate,nstate) )
+		!
+		do idt = 1, nT-1
+			Tv(:,:,(idt-1)*nqT+1) = logm( matmul(transpose(U(:,:,idt)),U(:,:,idt+1)) ) / dt
+			do iqt = 2, nqT
+				Tv(:,:,(idt-1)*nqT+iqt) = Tv(:,:,(idt-1)*nqT+1)
+			enddo
+		enddo
+		!
+		! evolution of rho
+		Ut(:,:,1) = transpose( U(:,:,1) )
+		do idt = 1, nT-1
+			do iqt = 1, nqT
+				iHTdt = (0.d0, 0.d0)
+				do istate = 1, nstate
+					iHTdt(istate,istate) = cmplx(0.d0, -( E(istate,idt)+(E(istate,idt+1)-E(istate,idt))*((iqt-0.5d0)/nqT) )*(dt/nqT), dp)
+				enddo
+				iHTdt = iHTdt - Tv(:,:,(idt-1)*nqT+iqt)*(dt/nqT)
+				U_dt = expm(iHTdt)
+				Ut(:,:,(idt-1)*nqT+iqt+1) = matmul( U_dt, Ut(:,:,(idt-1)*nqT+iqt) )
+			enddo
+		enddo
+		!
+		deallocate(U_dt,iHTdt)
+		!
+	end subroutine evo_npi_interp
 	!
 	!
 	subroutine evo_hst(Ut, Tv)
@@ -384,6 +431,72 @@ module benchmark_system
 		deallocate(rho_m,U_dt,U_dt2,T_trans,p_trans)
 		!
 	end subroutine final_rho_hop
+	!
+	subroutine final_rho_hop_interp(Ut, Tv, rho_f, pop_p, nqT)
+		! use given Ut, Tv and stored rho0 to calculate final rho and the 
+		! calculate final population based on hops
+		!
+		implicit none
+		!
+		complex(dp), dimension(:,:,:)  :: Ut
+		real(dp)   , dimension(:,:,:)  :: Tv
+		!
+		complex(dp), allocatable       :: rho_f(:,:), U_dt(:,:)
+		real(dp)   , allocatable       :: pop_p(:,:)
+		integer                        :: nqT
+		!
+		real(dp)                       :: drate
+		real(dp)   , allocatable       :: T_trans(:,:), p_trans(:,:)
+		integer                        :: idt, istate, jstate
+		!
+		if ( allocated(rho_f) ) deallocate(rho_f)
+		if ( allocated(pop_p) ) deallocate(pop_p)
+		allocate( rho_f(nstate,nstate) )
+		allocate( pop_p(nstate,1) )
+		!
+		allocate(  U_dt(nstate,nstate) )
+		allocate( T_trans(nstate,nstate) )
+		allocate( p_trans(nstate,nstate) )
+		!
+		! initial pop_p is the diagonal of rho_adiabat
+		rho_f = matmul( matmul(Ut(:,:,1), rho0), transpose(conjg(Ut(:,:,1))) )
+		do istate = 1, nstate
+			pop_p(istate,1) = dble(rho_f(istate,istate))
+		enddo
+		!
+		do idt = 1, (nT-1)*nqT
+			rho_f = matmul( matmul(Ut(:,:,idt+1), rho0), transpose(conjg(Ut(:,:,idt+1))) )
+			U_dt = matmul( Ut(:,:,idt+1), transpose(conjg( Ut(:,:,idt) )) )
+			!
+			! for calculating pop_p
+			! T_trans
+			T_trans = 0.d0
+			do istate = 1, nstate
+				do jstate = 1, nstate
+					if ( jstate .ne. istate ) then
+						drate = 2 * dble( Tv(istate,jstate,idt)*rho_f(jstate,istate) ) / dble( rho_f(istate,istate) + 1.d-13)
+						if ( drate > 0.d0 ) T_trans(istate,jstate) = drate
+					endif
+				enddo
+			enddo
+			!
+			! normalize Ti: if sum greater than 1
+			do istate = 1, nstate
+				if ( sum(T_trans(istate,:))*dt/nqT > 1.d0 ) T_trans(istate,:)=T_trans(istate,:)/(sum(T_trans(istate,:))*dt/nqT)
+			enddo
+			!
+			p_trans = transpose(T_trans)
+			do istate = 1, nstate
+				p_trans(istate,istate) = p_trans(istate,istate) - sum(T_trans(istate,:))
+			enddo
+			!
+			! naive integration for dp = p_trans*p*dt
+			pop_p = pop_p + matmul(p_trans,pop_p)*(dt/nqT)
+		enddo
+		!
+		deallocate(U_dt,T_trans,p_trans)
+		!
+	end subroutine final_rho_hop_interp
 	!
 	!
 	subroutine final_rho_hop_loc19(Ut, Tv, rho_f, hop_p, pop_p, state0)
