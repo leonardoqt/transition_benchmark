@@ -7,7 +7,7 @@ FFLAG = -llapack
  
 OBJ   = $(ODIR)/benchmark_system.o $(ODIR)/model_h.o
 
-run.x : $(SDIR)/main.f90 $(OBJ)
+hop.x : $(SDIR)/main.f90 $(OBJ)
 	$(F90) -I$(ODIR) -o $@ $^ $(FFLAG)
 
 $(ODIR)/%.o : $(SDIR)/%.f90 | $(ODIR)/.
@@ -20,4 +20,4 @@ $(ODIR)/%.o : $(SDIR)/%.f90 | $(ODIR)/.
 .PHONY: clean
 
 clean :
-	rm -rf run.x $(ODIR)
+	rm -rf hop.x $(ODIR)
