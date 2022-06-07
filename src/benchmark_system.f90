@@ -350,34 +350,28 @@ module benchmark_system
 	!
 	!
 	!
-	subroutine final_rho_hop(Ut, Tv, rho_f, hop_p, pop_p, state0)
+	subroutine final_rho_hop(Ut, Tv, rho_f, pop_p)
 		! use given Ut, Tv and stored rho0 to calculate final rho and the 
-		! total hopping rate from state0 to all states
 		! also calculate final population based on hops
 		!
 		implicit none
 		!
 		complex(dp), dimension(:,:,:)  :: Ut
 		real(dp)   , dimension(:,:,:)  :: Tv
-		integer                        :: state0
 		!
-		complex(dp), allocatable       :: rho_f(:,:), rho_m(:,:), U_dt(:,:), U_dt2(:,:)
-		real(dp)   , allocatable       :: hop_p(:), pop_p(:,:)
+		complex(dp), allocatable       :: rho_f(:,:), U_dt(:,:)
+		real(dp)   , allocatable       :: pop_p(:,:)
 		!
 		real(dp)                       :: drate
 		real(dp)   , allocatable       :: T_trans(:,:), p_trans(:,:)
 		integer                        :: idt, istate, jstate
 		!
 		if ( allocated(rho_f) ) deallocate(rho_f)
-		if ( allocated(hop_p) ) deallocate(hop_p)
 		if ( allocated(pop_p) ) deallocate(pop_p)
 		allocate( rho_f(nstate,nstate) )
-		allocate( hop_p(nstate) )
 		allocate( pop_p(nstate,1) )
 		!
-		allocate( rho_m(nstate,nstate) )
 		allocate(  U_dt(nstate,nstate) )
-		allocate( U_dt2(nstate,nstate) )
 		allocate( T_trans(nstate,nstate) )
 		allocate( p_trans(nstate,nstate) )
 		!
@@ -387,19 +381,9 @@ module benchmark_system
 			pop_p(istate,1) = dble(rho_f(istate,istate))
 		enddo
 		!
-		hop_p = 0.d0
 		do idt = 1, nT-1
 			rho_f = matmul( matmul(Ut(:,:,idt+1), rho0), transpose(conjg(Ut(:,:,idt+1))) )
 			U_dt = matmul( Ut(:,:,idt+1), transpose(conjg( Ut(:,:,idt) )) )
-			U_dt2 = sqrtm(U_dt)
-			rho_m = matmul( matmul(transpose(conjg(U_dt2)), rho_f), U_dt2 )
-			!
-			! for calculating hop_p
-			do istate = 1, nstate
-				drate = 2 * dble( Tv(state0,istate,idt)*rho_m(istate,state0) ) / dble( rho_f(state0,state0) + 1.d-13) * dt
-				!if ( drate > 1.d0 ) drate = 1.d0
-				if ( drate > 0.d0 ) hop_p(istate) = hop_p(istate) + drate
-			enddo
 			!
 			! for calculating pop_p
 			! T_trans
@@ -407,8 +391,7 @@ module benchmark_system
 			do istate = 1, nstate
 				do jstate = 1, nstate
 					if ( jstate .ne. istate ) then
-						drate = 2 * dble( Tv(istate,jstate,idt)*rho_m(jstate,istate) ) / dble( rho_f(istate,istate) + 1.d-13)
-						!if ( drate*dt > 1.d0 ) drate = 1.d0/dt
+						drate = 2 * dble( Tv(istate,jstate,idt)*rho_f(jstate,istate) ) / dble( rho_f(istate,istate) + 1.d-13)
 						if ( drate > 0.d0 ) T_trans(istate,jstate) = drate
 					endif
 				enddo
@@ -428,7 +411,7 @@ module benchmark_system
 			pop_p = pop_p + matmul(p_trans,pop_p)*dt
 		enddo
 		!
-		deallocate(rho_m,U_dt,U_dt2,T_trans,p_trans)
+		deallocate(U_dt,T_trans,p_trans)
 		!
 	end subroutine final_rho_hop
 	!
@@ -499,7 +482,7 @@ module benchmark_system
 	end subroutine final_rho_hop_interp
 	!
 	!
-	subroutine final_rho_hop_loc19(Ut, Tv, rho_f, hop_p, pop_p, state0)
+	subroutine final_rho_hop_loc19(Ut, Tv, rho_f, pop_p)
 		! https://doi.org/10.1016/j.comptc.2019.02.009
 		!
 		! use given Ut, Tv and stored rho0 to calculate final rho and the 
@@ -509,10 +492,9 @@ module benchmark_system
 		!
 		complex(dp), dimension(:,:,:)  :: Ut
 		real(dp)   , dimension(:,:,:)  :: Tv
-		integer                        :: state0
 		!
 		complex(dp), allocatable       :: rho_f(:,:)
-		real(dp)   , allocatable       :: hop_p(:), pop_p(:,:)
+		real(dp)   , allocatable       :: pop_p(:,:)
 		!
 		complex(dp), allocatable       :: rho_l(:,:)
 		real(dp)   , allocatable       :: T_trans(:,:), p_trans(:,:)
@@ -520,10 +502,8 @@ module benchmark_system
 		integer                        :: idt, istate, jstate
 		!
 		if ( allocated(rho_f) ) deallocate(rho_f)
-		if ( allocated(hop_p) ) deallocate(hop_p)
 		if ( allocated(pop_p) ) deallocate(pop_p)
 		allocate( rho_f(nstate,nstate) )
-		allocate( hop_p(nstate) )
 		allocate( pop_p(nstate,1) )
 		!
 		allocate( rho_l(nstate,nstate) )
@@ -536,11 +516,11 @@ module benchmark_system
 			pop_p(istate,1) = dble(rho_l(istate,istate))
 		enddo
 		!
-		hop_p = 0.d0
+		!hop_p = 0.d0
 		do idt = 1, nT-1
 			rho_f = matmul( matmul(Ut(:,:,idt+1), rho0), transpose(conjg(Ut(:,:,idt+1))) )
 			!
-			! calculate T_trans and hop_p
+			! calculate T_trans and pop_p
 			T_trans = 0.d0
 			do istate = 1, nstate
 				wk = dble( rho_l(istate,istate)-rho_f(istate,istate) ) / dble( rho_l(istate,istate) )
@@ -566,7 +546,7 @@ module benchmark_system
 							if ( Pdt > 0.d0 ) then
 								xkj = abs(Tv(istate,jstate,idt))*sqrt(Pdt) / Sk
 								T_trans(istate,jstate) = xkj * wk / dt
-								if ( istate .eq. state0 ) hop_p(jstate) = hop_p(jstate) + xkj * wk
+								!if ( istate .eq. state0 ) hop_p(jstate) = hop_p(jstate) + xkj * wk
 							endif
 						endif
 					enddo
@@ -594,7 +574,7 @@ module benchmark_system
 	end subroutine final_rho_hop_loc19
 	!
 	!
-	subroutine final_psi_hop_loc01(Ut, Tv, psi_f, hop_p, pop_p, state0)
+	subroutine final_psi_hop_loc01(Ut, Tv, psi_f, pop_p)
 		! use given Ut, Tv and stored psi0 to calculate final psi and the 
 		! total hopping rate from state0 to all states
 		!
@@ -602,20 +582,17 @@ module benchmark_system
 		!
 		complex(dp), dimension(:,:,:)  :: Ut
 		real(dp)   , dimension(:,:,:)  :: Tv
-		integer                        :: state0
 		!
 		complex(dp), allocatable       :: psi_f(:,:), psi_l(:,:), U_dt(:,:)
-		real(dp)   , allocatable       :: hop_p(:), pop_p(:,:)
+		real(dp)   , allocatable       :: pop_p(:,:)
 		!
 		real(dp)   , allocatable       :: T_trans(:,:), p_trans(:,:)
 		real(dp)                       :: drate
 		integer                        :: idt, istate, jstate
 		!
 		if ( allocated(psi_f) ) deallocate(psi_f)
-		if ( allocated(hop_p) ) deallocate(hop_p)
 		if ( allocated(pop_p) ) deallocate(pop_p)
 		allocate( psi_f(nstate,1) )
-		allocate( hop_p(nstate) )
 		allocate( pop_p(nstate,1) )
 		!
 		allocate( psi_l(nstate,1) )
@@ -629,7 +606,7 @@ module benchmark_system
 			pop_p(istate,1) = dble(psi_l(istate,1)*conjg(psi_l(istate,1)))
 		enddo
 		!
-		hop_p = 0.d0
+		!hop_p = 0.d0
 		do idt = 1, nT-1
 			U_dt = matmul( Ut(:,:,idt+1), transpose(conjg(Ut(:,:,idt))) )
 			psi_f = matmul(U_dt, psi_l)
@@ -641,12 +618,12 @@ module benchmark_system
 						drate = -dble( U_dt(istate,jstate)*psi_l(jstate,1)*conjg(psi_f(istate,1)) ) * &
 						         dble( psi_f(istate,1)*conjg(psi_f(istate,1)) - psi_l(istate,1)*conjg(psi_l(istate,1)) )
 						drate = drate / ( dble( psi_f(istate,1)*conjg(psi_f(istate,1)) ) - &
-						                  dble( U_dt(istate,istate)*psi_l(istate,1)*conjg(psi_f(istate,1)) ) )
-						drate = drate/dble( psi_l(istate,1)*conjg(psi_l(istate,1)) )
+						                  dble( U_dt(istate,istate)*psi_l(istate,1)*conjg(psi_f(istate,1)) )+1.d-13 )
+						drate = drate/dble( psi_l(istate,1)*conjg(psi_l(istate,1)) + 1.d-13 )
 						!if ( drate > 1.d0 ) drate = 1.d0
 						if ( drate > 0.d0 ) then
 							T_trans(istate,jstate) = drate / dt
-							if ( istate .eq. state0 ) hop_p(jstate) = hop_p(jstate) + drate
+							!if ( istate .eq. state0 ) hop_p(jstate) = hop_p(jstate) + drate
 						endif
 					endif
 				enddo
@@ -674,7 +651,7 @@ module benchmark_system
 	!
 	!
 	!
-	subroutine final_psi_hop_loc01_alter(Ut, Tv, psi_f, hop_p, pop_p, state0)
+	subroutine final_psi_hop_loc01_alter(Ut, Tv, psi_f, pop_p)
 		! use given Ut, Tv and stored psi0 to calculate final psi and the 
 		! total hopping rate from state0 to all states
 		!
@@ -685,17 +662,15 @@ module benchmark_system
 		integer                        :: state0
 		!
 		complex(dp), allocatable       :: psi_f(:,:), psi_l(:,:), U_dt(:,:)
-		real(dp)   , allocatable       :: hop_p(:), pop_p(:,:)
+		real(dp)   , allocatable       :: pop_p(:,:)
 		!
 		real(dp)   , allocatable       :: T_trans(:,:), p_trans(:,:)
 		real(dp)                       :: drate
 		integer                        :: idt, istate, jstate
 		!
 		if ( allocated(psi_f) ) deallocate(psi_f)
-		if ( allocated(hop_p) ) deallocate(hop_p)
 		if ( allocated(pop_p) ) deallocate(pop_p)
 		allocate( psi_f(nstate,1) )
-		allocate( hop_p(nstate) )
 		allocate( pop_p(nstate,1) )
 		!
 		allocate( psi_l(nstate,1) )
@@ -709,7 +684,7 @@ module benchmark_system
 			pop_p(istate,1) = dble(psi_l(istate,1)*conjg(psi_l(istate,1)))
 		enddo
 		!
-		hop_p = 0.d0
+		!hop_p = 0.d0
 		do idt = 1, nT-1
 			U_dt = matmul( Ut(:,:,idt+1), transpose(conjg(Ut(:,:,idt))) )
 			psi_f = matmul(U_dt, psi_l)
@@ -722,7 +697,7 @@ module benchmark_system
 						        dble(psi_f(istate,1)*conjg(psi_f(istate,1)) + 1.d-13)
 						if ( drate > 0.d0 ) then
 							T_trans(istate,jstate) = drate
-							if ( istate .eq. state0 ) hop_p(jstate) = hop_p(jstate) + drate
+							!if ( istate .eq. state0 ) hop_p(jstate) = hop_p(jstate) + drate
 						endif
 					endif
 				enddo
