@@ -482,6 +482,77 @@ module benchmark_system
 	end subroutine final_rho_hop_interp
 	!
 	!
+	subroutine final_psi_hop_interp_dt(Ut, Tv, psi_f, pop_p, nqT)
+		! use given Ut, Tv and stored rho0 to calculate final rho and the 
+		! calculate final population based on hops
+		!
+		implicit none
+		!
+		complex(dp), dimension(:,:,:)  :: Ut
+		real(dp)   , dimension(:,:,:)  :: Tv
+		!
+		complex(dp), allocatable       :: psi_f(:,:), psi_l(:,:), psi00(:,:)
+		real(dp)   , allocatable       :: pop_p(:,:)
+		integer                        :: nqT
+		!
+		real(dp)                       :: drate
+		real(dp)   , allocatable       :: T_trans(:,:), p_trans(:,:)
+		integer                        :: idt, istate, jstate
+		!
+		if ( allocated(psi_f) ) deallocate(psi_f)
+		if ( allocated(pop_p) ) deallocate(pop_p)
+		allocate( psi_f(nstate,1) )
+		allocate( pop_p(nstate,1) )
+		!
+		allocate( psi_l(nstate,1) )
+		allocate( psi00(nstate,1) )
+		allocate( T_trans(nstate,nstate) )
+		allocate( p_trans(nstate,nstate) )
+		!
+		! initial pop_p is the diagonal of rho_adiabat
+		psi00(:,1) = psi0
+		psi_l = matmul(Ut(:,:,1), psi00)
+		do istate = 1, nstate
+			pop_p(istate,1) = dble(psi_l(istate,1)*conjg(psi_l(istate,1)))
+		enddo
+		!
+		do idt = 1, (nT-1)*nqT
+			psi_f = matmul(Ut(:,:,idt+1), psi00)
+			!
+			! for calculating pop_p
+			! T_trans
+			T_trans = 0.d0
+			do istate = 1, nstate
+				do jstate = 1, nstate
+					if ( jstate .ne. istate ) then
+						drate = 2 * dble( Tv(istate,jstate,idt)*psi_f(jstate,1)*conjg(psi_l(istate,1)) ) / &
+						        dble( psi_f(istate,1)*conjg(psi_f(istate,1)) + 1.d-13)
+						if ( drate > 0.d0 ) T_trans(istate,jstate) = drate
+					endif
+				enddo
+			enddo
+			!
+			! normalize Ti: if sum greater than 1
+			do istate = 1, nstate
+				if ( sum(T_trans(istate,:))*dt/nqT > 1.d0 ) T_trans(istate,:)=T_trans(istate,:)/(sum(T_trans(istate,:))*dt/nqT)
+			enddo
+			!
+			p_trans = transpose(T_trans)
+			do istate = 1, nstate
+				p_trans(istate,istate) = p_trans(istate,istate) - sum(T_trans(istate,:))
+			enddo
+			!
+			! naive integration for dp = p_trans*p*dt
+			pop_p = pop_p + matmul(p_trans,pop_p)*(dt/nqT)
+			!
+			psi_l = psi_f
+		enddo
+		!
+		deallocate(T_trans,p_trans,psi_l,psi00)
+		!
+	end subroutine final_psi_hop_interp_dt
+	!
+	!
 	subroutine final_rho_hop_loc19(Ut, Tv, rho_f, pop_p)
 		! https://doi.org/10.1016/j.comptc.2019.02.009
 		!
@@ -651,7 +722,7 @@ module benchmark_system
 	!
 	!
 	!
-	subroutine final_psi_hop_loc01_alter(Ut, Tv, psi_f, pop_p)
+	subroutine final_psi_hop_loc01_dt(Ut, Tv, psi_f, pop_p)
 		! use given Ut, Tv and stored psi0 to calculate final psi and the 
 		! total hopping rate from state0 to all states
 		!
@@ -721,7 +792,7 @@ module benchmark_system
 		!
 		deallocate( psi_l,U_dt,T_trans,p_trans )
 		!
-	end subroutine final_psi_hop_loc01_alter
+	end subroutine final_psi_hop_loc01_dt
 	!
 	!
 	!
@@ -1180,4 +1251,22 @@ module benchmark_system
 		enddo
 	end subroutine
 	!
+	subroutine test_H()
+			!
+			implicit none
+			!
+			integer                :: idt, istate
+			real(dp), allocatable  :: H_diag(:)
+			character(len=100)     :: f_sz
+			!
+			allocate(H_diag(nstate))
+			write(f_sz,*) nstate+1
+			do idt = 1,nT
+					   do istate = 1,nstate
+							   H_diag(istate) = H(istate,istate,idt)
+					   enddo
+					   write(102,'('//adjustl(f_sz)//'(ES16.8,1X))') idt*dt, H_diag
+			enddo
+			deallocate(H_diag)
+	end subroutine
 end module benchmark_system

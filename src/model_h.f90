@@ -95,7 +95,7 @@ module model_H
 		!
 		allocate(H_sys_single(sz,sz))
 		!
-		x_shift = 0.05555555555d0
+		x_shift = 0.005555555555d0
 		!
 		H_sys_single = 0.d0
 		H_sys_single(2,2) = - (x-x_shift) - shift
@@ -120,7 +120,7 @@ module model_H
 		!
 		allocate(H_sys_rotate(sz,sz))
 		!
-		x_shift = 0.05555555555d0
+		x_shift = 0.005555555555d0
 		pi2 = atan(1.d0) * 2
 		ang0 = pi2 / sz
 		dang = ang0 * 2
@@ -147,7 +147,7 @@ module model_H
 		!
 		allocate(H_sys_parallel(sz,sz))
 		!
-		x_shift = 0.05555555555d0
+		x_shift = 0.005555555555d0
 		sz1 = sz / 2
 		!
 		H_sys_parallel(:,:) = 1.d-1 / sqrt(sz*1.d0)
@@ -178,7 +178,7 @@ module model_H
 		szr = sz / 2
 		szp1 = (sz-szr) / 2
 		!
-		x_shift = 0.05555555555d0
+		x_shift = 0.005555555555d0
 		pi2 = atan(1.d0) * 2
 		ang0 = pi2 / szr
 		dang = ang0 * 2
