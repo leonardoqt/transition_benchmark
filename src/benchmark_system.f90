@@ -236,6 +236,72 @@ module benchmark_system
 	end subroutine evo_npi_interp
 	!
 	!
+	subroutine evo_npi_interp_testH1(Ut, Tv, nqT)
+		! directly use eigenvalue of interpolated local diabats as adiabatic surface
+		!
+		implicit none
+		!
+		complex(dp), allocatable :: Ut(:,:,:)
+		real(dp)   , allocatable :: Tv(:,:,:)
+		integer                  :: nqT ! number of quantum time steps in each ionic time step
+		!
+		real(dp)   , allocatable :: H_ld0(:,:), H_ld1(:,:), H_ldt(:,:), E_a_ld(:), U_tmp(:,:)
+		complex(dp), allocatable :: U_dt(:,:), iHTdt(:,:)
+		integer :: idt, iqt, istate
+		!
+		!
+		if ( allocated(Ut) ) deallocate(Ut)
+		if ( allocated(Tv) ) deallocate(Tv)
+		allocate( Ut(nstate,nstate,(nT-1)*nqT+1 ) )
+		allocate( Tv(nstate,nstate,(nT-1)*nqT   ) )
+		!
+		allocate(  H_ld0(nstate,nstate) )
+		allocate(  H_ld1(nstate,nstate) )
+		allocate(  H_ldt(nstate,nstate) )
+		allocate(  U_tmp(nstate,nstate) )
+		allocate( E_a_ld(nstate)        )
+		allocate(  U_dt(nstate,nstate) )
+		allocate( iHTdt(nstate,nstate) )
+		!
+		do idt = 1, nT-1
+			Tv(:,:,(idt-1)*nqT+1) = logm( matmul(transpose(U(:,:,idt)),U(:,:,idt+1)) ) / dt
+			do iqt = 2, nqT
+				Tv(:,:,(idt-1)*nqT+iqt) = Tv(:,:,(idt-1)*nqT+1)
+			enddo
+		enddo
+		!
+		! evolution of rho
+		Ut(:,:,1) = transpose( U(:,:,1) )
+		do idt = 1, nT-1
+			!
+			H_ld0 = 0.d0
+			do istate = 1, nstate
+				H_ld0(istate,istate) = E(istate,idt)
+			enddo
+			!
+			H_ld1 = matmul(matmul(transpose(U(:,:,idt)),H(:,:,idt+1)),U(:,:,idt))
+			H_ld1 = H_ld1 - H_ld0
+			!
+			do iqt = 1, nqT
+				iHTdt = (0.d0, 0.d0)
+				! Here we choose to first get avarage H at 1/2 dt then directly use its eigenvalue
+				! Alternatively, one can get H at dt and get interpolate eigenvalue at 1/2 dt
+				H_ldt = H_ld0 + H_ld1*((iqt-0.5d0)/nqT)
+				call diag_real(H_ldt,U_tmp,E_a_ld)
+				do istate = 1, nstate
+					iHTdt(istate,istate) = cmplx(0.d0, -E_a_ld(istate)*(dt/nqT), dp)
+				enddo
+				iHTdt = iHTdt - Tv(:,:,(idt-1)*nqT+iqt)*(dt/nqT)
+				U_dt = expm(iHTdt)
+				Ut(:,:,(idt-1)*nqT+iqt+1) = matmul( U_dt, Ut(:,:,(idt-1)*nqT+iqt) )
+			enddo
+		enddo
+		!
+		deallocate(H_ld0,H_ld1,H_ldt,U_tmp,E_a_ld,U_dt,iHTdt)
+		!
+	end subroutine evo_npi_interp_testH1
+	!
+	!
 	subroutine evo_hst(Ut, Tv)
 		! it generates Ut and Tv rate, such that Ut*rho_diabat*Ut^\dagger is rho(t)_adiabats
 		! and Tv*dt is the hopping rate
