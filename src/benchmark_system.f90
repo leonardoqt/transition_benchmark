@@ -6,8 +6,8 @@ module benchmark_system
 	!
 	real(dp)  :: v0, dt
 	integer   :: nT, nstate
-	real(dp), allocatable :: U(:,:,:), E(:,:), H(:,:,:), Uini(:,:)
-	real(dp), allocatable :: psi0(:), rho0(:,:) ! rho is used in real calculation
+	real(dp)   , allocatable :: U(:,:,:), E(:,:), H(:,:,:), Uini(:,:)
+	complex(dp), allocatable :: psi0(:), rho0(:,:) ! rho is used in real calculation
 	!
 	contains
 	!
@@ -83,12 +83,12 @@ module benchmark_system
 		!
 		implicit none
 		!
-		real(dp), dimension(:) :: psi_in
+		complex(dp), dimension(:) :: psi_in
 		!
 		!
 		psi0 = psi_in
 		rho0(:,1) = psi0
-		rho0 = matmul( rho0(:,1:1), transpose(rho0(:,1:1)) )
+		rho0 = matmul( rho0(:,1:1), conjg(transpose(rho0(:,1:1))) )
 		!
 	end subroutine
 	!
@@ -96,7 +96,7 @@ module benchmark_system
 		!
 		implicit none
 		!
-		real(dp), dimension(:,:) :: rho_in
+		complex(dp), dimension(:,:) :: rho_in
 		!
 		!
 		rho0 = rho_in

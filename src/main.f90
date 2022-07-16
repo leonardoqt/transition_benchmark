@@ -1,6 +1,6 @@
 program test
 	!
-	use benchmark_system,  only: assign_model, assign_psi, rho0, Uini, nT, &
+	use benchmark_system,  only: assign_model, assign_psi, Uini, nT, &
 	                             evo_npi_interp, evo_npi_interp_testH1, evo_npi, evo_hst, evo_loc01, evo_rho_diab, &
 	                             final_rho_hop, final_rho_hop_loc19, final_psi_hop_loc01, final_psi_hop_loc01_dt, &
 	                             final_rho_hop_interp, final_psi_hop_interp_dt, &
@@ -10,11 +10,11 @@ program test
 	!
 	implicit none
 	!
-	real(dp)   , allocatable :: psi(:), Tv(:,:,:), &
+	real(dp)   , allocatable :: Tv(:,:,:), &
 	                            pop_p_npi_dq(:,:), pop_p_npi_t_dq(:,:), pop_p_npi(:,:), pop_p_npi_t(:,:), pop_p_hst(:,:), &
 	                            pop_p_loc01(:,:), pop_p_loc01_l(:,:), pop_p_loc01_t(:,:), pop_p_loc19(:,:)
 	!
-	complex(dp), allocatable :: Ut(:,:,:), rho_f_npi_dq(:,:), rho_f_npi(:,:), rho_f_hst(:,:), &
+	complex(dp), allocatable :: psi(:), Ut(:,:,:), rho_f_npi_dq(:,:), rho_f_npi(:,:), rho_f_hst(:,:), &
 	                            rho_f_loc(:,:), psi_f(:,:)
 	!
 	real(dp)   , allocatable :: rho_diag_diab(:), rho_diag_npi_dq(:), rho_diag_npi(:), rho_diag_hst(:), rho_diag_loc(:)
@@ -41,24 +41,31 @@ program test
 	!
 	allocate(psi(sz))
 	allocate(aux_vec(sz,1))
-	psi = 0.d0
+	psi = (0.d0, 0.d0)
 	aux_vec = 0.d0
 	select case (ini_type)
 		case(0)
 			! ground diabats
-			psi(1) = 1.d0
+			psi(1) = (1.d0,0.d0)
 		case(1)
 			! ground adiabats
 			aux_vec(1,1) = 1.d0
 			aux_vec = matmul(Uini, aux_vec)
-			psi = aux_vec(:,1)
+			psi = cmplx(aux_vec(:,1), aux_vec(:,1)*0.d0, dp)
 		case(2)
 			! all adiabats
 			do istate = 1, sz
 				aux_vec(istate,1) = 1.d0/sqrt(sz*1.d0)
 			enddo
 			aux_vec = matmul(Uini, aux_vec)
-			psi = aux_vec(:,1)
+			psi = cmplx(aux_vec(:,1), aux_vec(:,1)*0.d0, dp)
+		case(3)
+			! random complex
+			do istate = 1, sz
+				psi(istate) = cmplx(rand(0),rand(0),dp)
+			enddo
+			aux_vec(1,1) = dble(dot_product(psi,psi))
+			psi = psi / aux_vec(1,1)
 	end select
 	call assign_psi(psi)
 	!
