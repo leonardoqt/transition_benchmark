@@ -803,7 +803,10 @@ module benchmark_system
 		!
 		real(dp)   , allocatable       :: T_trans(:,:), p_trans(:,:)
 		real(dp)                       :: drate
-		integer                        :: idt, istate, jstate
+		real(dp)   , allocatable       :: pop_f(:,:), pop_l(:,:), dpop(:,:), ppop_dl(:,:), ppop_ll(:,:)
+		real(dp)   , allocatable       :: P1(:,:), P2(:,:), WW(:,:),one(:,:), eye(:,:), p_trans_opt(:,:)
+		real(dp)                       :: err_sum
+		integer                        :: idt, istate, jstate, t1
 		!
 		if ( allocated(psi_f) ) deallocate(psi_f)
 		if ( allocated(pop_p) ) deallocate(pop_p)
@@ -814,6 +817,23 @@ module benchmark_system
 		allocate( U_dt(nstate,nstate) )
 		allocate( T_trans(nstate,nstate) )
 		allocate( p_trans(nstate,nstate) )
+		allocate( pop_f(nstate,1) )
+		allocate( pop_l(nstate,1) )
+		allocate( dpop (nstate,1) )
+		allocate( one  (nstate,1) )
+		allocate( P1     (nstate,nstate) )
+		allocate( P2     (nstate,nstate) )
+		allocate( WW     (nstate,nstate) )
+		allocate( eye    (nstate,nstate) )
+		allocate( ppop_dl(nstate,nstate) )
+		allocate( ppop_ll(nstate,nstate) )
+		allocate( p_trans_opt(nstate,nstate) )
+		!
+		one = 1.d0
+		eye = 0.d0
+		do istate = 1,nstate
+			eye(istate,istate) = 1.d0
+		enddo
 		!
 		psi_l(:,1) = psi0
 		psi_l = matmul(Ut(:,:,1), psi_l)
@@ -850,13 +870,61 @@ module benchmark_system
 				p_trans(istate,istate) = p_trans(istate,istate) - sum(T_trans(istate,:))
 			enddo
 			!
-			! naive integration for dp = p_trans*p*dt
-			pop_p = pop_p + matmul(p_trans,pop_p)*dt
+			!========================================
+			!! naive integration for dp = p_trans*p*dt
+			!pop_p = pop_p + matmul(p_trans,pop_p)*dt
+			!-------------------
+			! get the constained solution without boundaries
+			pop_f = dble(abs(psi_f)**2)
+			pop_l = dble(abs(psi_l)**2)
+			dpop = pop_f - pop_l
+			ppop_dl = matmul(dpop ,transpose(pop_l)) / dot_product(pop_l(:,1),pop_l(:,1))
+			ppop_ll = matmul(pop_l,transpose(pop_l)) / dot_product(pop_l(:,1),pop_l(:,1))
+			P1 = eye-matmul(one,transpose(one))/nstate
+			P2 = eye-ppop_ll
+			p_trans_opt = matmul(matmul(P1, p_trans*dt), P2) + ppop_dl
+			!
+			! applying boundaries iteratively
+			! TODO: need to find a better algorithm
+			WW = p_trans_opt
+			do istate = 1,nstate
+				WW(istate,istate) = WW(istate,istate) + 1.d0
+			enddo
+			!
+			do t1 = 1,1000
+				call remove_neg(P1, P2, WW)
+				err_sum = 0.d0
+				do istate = 1,nstate
+				do jstate = 1,nstate
+					if ( WW(istate,jstate) < 0.d0) err_sum = err_sum - WW(istate,jstate)
+				enddo
+				enddo
+				if (err_sum < 1.d-9) exit
+			enddo
+			! Note that W = P + I
+			!if (t1 >= 1000) write(*,*) "warning"
+			!
+			! safeguard for still negative matrix elements
+			do istate = 1,nstate
+			do jstate = 1,nstate
+				if ( WW(istate,jstate) < 0.d0) WW(istate,jstate) = 0.d0
+			enddo
+			enddo
+			!
+			p_trans_opt = WW
+			do istate = 1,nstate
+				p_trans_opt(istate,istate) = p_trans_opt(istate,istate) - sum(p_trans_opt(:,istate))
+				if (p_trans_opt(istate,istate) < -1.d0) p_trans_opt(:,istate) = -p_trans_opt(:,istate) / p_trans_opt(istate,istate)
+			enddo
+			!
+			pop_p = pop_p + matmul(p_trans_opt,pop_p)
+			!========================================
 			!
 			psi_l = psi_f
 		enddo
 		!
 		deallocate( psi_l,U_dt,T_trans,p_trans )
+		deallocate( pop_f,pop_l,dpop,ppop_dl,ppop_ll,one,P1,P2,WW,eye,p_trans_opt )
 		!
 	end subroutine final_psi_hop_loc01_dt
 	!
@@ -1261,6 +1329,66 @@ module benchmark_system
 	end subroutine
 	!
 	!
+	subroutine remove_neg(P1, P2, WW)
+		implicit none
+		!
+		real(dp), dimension(:,:)  :: P1, P2, WW
+		!
+		real(dp), allocatable     :: sigma(:,:), ss(:,:), xx(:,:)
+		integer , allocatable     :: ind1(:), ind2(:)
+		integer                   :: nnz, t1, t2
+		!
+		integer                   :: err_msg, lwork
+		integer, allocatable      :: ipiv(:), work(:)
+		!
+		allocate( ind1(nstate*nstate) )
+		allocate( ind2(nstate*nstate) )
+		!
+		nnz = 0
+		ind1 = 0
+		ind2 = 0
+		do t1 = 1,nstate
+		do t2 = 1,nstate
+			if (WW(t1,t2) < -1.d-14 ) then
+				nnz = nnz + 1
+				ind1(nnz) = t1
+				ind2(nnz) = t2
+			endif
+		enddo
+		enddo
+		!
+		if (nnz == 0) then
+			deallocate(ind1,ind2)
+			return
+		endif
+		!
+		allocate(sigma(nnz,nnz))
+		allocate(ss(nnz,1))
+		allocate(xx(nnz,1))
+		!
+		do t1 = 1,nnz
+			ss(t1,1) = -WW(ind1(t1),ind2(t1))
+			do t2 = 1,nnz
+				sigma(t1,t2) = P1(ind1(t1),ind1(t2))*P2(ind2(t2),ind2(t1))
+			enddo
+		enddo
+		!
+		lwork = 3*nnz
+		allocate(ipiv(nnz))
+		allocate(work(lwork))
+		call dgetrf(nnz,nnz,sigma,nnz,ipiv,err_msg)
+		call dgetri(nnz,sigma,nnz,ipiv,work,lwork,err_msg)
+		xx = matmul(sigma,ss)
+		!
+		do t1 = 1,nnz
+			WW = WW + xx(t1,1)*matmul( P1(:,ind1(t1):ind1(t1)), P2(ind2(t1):ind2(t1),:) )
+		enddo
+		!
+		deallocate(ind1,ind2,sigma,ss,xx,ipiv,work)
+		!
+	end subroutine remove_neg
+	!
+	!
 	subroutine test_U()
 		!
 		implicit none
@@ -1328,10 +1456,10 @@ module benchmark_system
 			allocate(H_diag(nstate))
 			write(f_sz,*) nstate+1
 			do idt = 1,nT
-					   do istate = 1,nstate
-							   H_diag(istate) = H(istate,istate,idt)
-					   enddo
-					   write(102,'('//adjustl(f_sz)//'(ES16.8,1X))') idt*dt, H_diag
+					do istate = 1,nstate
+						H_diag(istate) = H(istate,istate,idt)
+					enddo
+					write(102,'('//adjustl(f_sz)//'(ES16.8,1X))') idt*dt, H_diag
 			enddo
 			deallocate(H_diag)
 	end subroutine
