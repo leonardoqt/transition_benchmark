@@ -891,18 +891,9 @@ module benchmark_system
 				WW(istate,istate) = WW(istate,istate) + 1.d0
 			enddo
 			!
-			do t1 = 1,1000
-				call remove_neg(P1, P2, WW)
-				err_sum = 0.d0
-				do istate = 1,nstate
-				do jstate = 1,nstate
-					if ( WW(istate,jstate) < 0.d0) err_sum = err_sum - WW(istate,jstate)
-				enddo
-				enddo
-				if (err_sum < 1.d-9) exit
-			enddo
+			call remove_neg_increment(P1, P2, WW, p_trans*dt, 1000)
+			!
 			! Note that W = P + I
-			!if (t1 >= 1000) write(*,*) "warning"
 			!
 			! safeguard for still negative matrix elements
 			do istate = 1,nstate
@@ -1329,64 +1320,122 @@ module benchmark_system
 	end subroutine
 	!
 	!
-	subroutine remove_neg(P1, P2, WW)
+	subroutine remove_neg_increment(P1, P2, WW, TT, niter)
 		implicit none
 		!
-		real(dp), dimension(:,:)  :: P1, P2, WW
+		real(dp), dimension(:,:)  :: P1, P2, WW, TT
+		integer                   :: iter, niter
 		!
 		real(dp), allocatable     :: sigma(:,:), ss(:,:), xx(:,:)
-		integer , allocatable     :: ind1(:), ind2(:)
-		integer                   :: nnz, t1, t2
+		integer , allocatable     :: ind1(:), ind2(:), ind0(:)
+		integer                   :: nnz, nnz0, t1, t2, t3
 		!
 		integer                   :: err_msg, lwork
 		integer, allocatable      :: ipiv(:), work(:)
 		!
+		real(dp)                  :: err_sum
+		!
+		do t1 = 1, nstate
+			TT(t1,t1) = TT(t1,t1) + 1.d0
+		enddo
+		!
 		allocate( ind1(nstate*nstate) )
 		allocate( ind2(nstate*nstate) )
+		allocate( ind0(nstate*nstate) )
 		!
-		nnz = 0
+		nnz  = 0
+		nnz0 = 0
 		ind1 = 0
 		ind2 = 0
+		ind0 = 0
+		!
+		! first find which one from the pair of T_ij, T_ji must be zero
 		do t1 = 1,nstate
-		do t2 = 1,nstate
-			if (WW(t1,t2) < -1.d-14 ) then
-				nnz = nnz + 1
-				ind1(nnz) = t1
-				ind2(nnz) = t2
+		do t2 = t1,nstate
+			if ( TT(t1,t2) < 1.d-14 ) then
+				nnz0 = nnz0+1
+				ind1(nnz0) = t1
+				ind2(nnz0) = t2
+				ind0(nnz0) = t1*nstate+t2
+			elseif ( t1 .ne. t2 ) then
+				nnz0 = nnz0+1
+				ind1(nnz0) = t2
+				ind2(nnz0) = t1
+				ind0(nnz0) = t2*nstate+t1
 			endif
 		enddo
 		enddo
 		!
-		if (nnz == 0) then
-			deallocate(ind1,ind2)
-			return
-		endif
-		!
-		allocate(sigma(nnz,nnz))
-		allocate(ss(nnz,1))
-		allocate(xx(nnz,1))
-		!
-		do t1 = 1,nnz
-			ss(t1,1) = -WW(ind1(t1),ind2(t1))
-			do t2 = 1,nnz
-				sigma(t1,t2) = P1(ind1(t1),ind1(t2))*P2(ind2(t2),ind2(t1))
+		! start the increment loop for making all element non-zero
+		nnz = nnz0
+		do iter = 1, niter
+			allocate(sigma(nnz,nnz))
+			allocate(ss(nnz,1))
+			allocate(xx(nnz,1))
+			!
+			do t1 = 1,nnz
+				ss(t1,1) = -WW(ind1(t1),ind2(t1))
+				do t2 = 1,nnz
+					sigma(t1,t2) = P1(ind1(t1),ind1(t2))*P2(ind2(t2),ind2(t1))
+				enddo
 			enddo
+			!
+			lwork = 3*nnz
+			allocate(ipiv(nnz))
+			allocate(work(lwork))
+			call dgetrf(nnz,nnz,sigma,nnz,ipiv,err_msg)
+			call dgetri(nnz,sigma,nnz,ipiv,work,lwork,err_msg)
+			if (err_msg .ne. 0) then
+				!write(*,*) "warning! not enough dof", nnz, nnz0
+				deallocate(sigma,ss,xx,ipiv,work)
+				exit
+			endif
+			xx = matmul(sigma,ss)
+			!
+			do t1 = 1,nnz
+				WW = WW + xx(t1,1)*matmul( P1(:,ind1(t1):ind1(t1)), P2(ind2(t1):ind2(t1),:) )
+			enddo
+			!
+			deallocate(sigma,ss,xx,ipiv,work)
+			!
+			! check if need next iteration
+			nnz = nnz0
+			err_sum = 0.d0
+			do t1 = 1,nstate
+			do t2 = 1,nstate
+				if (WW(t1,t2) < -1.d-13 ) then
+					!
+					err_sum = err_sum - WW(t1,t2)
+					!
+					do t3 = 1, nnz0
+						if (ind0(t3) == t1*nstate+t2) exit
+					enddo
+					if (t3 == nnz0+1) then
+						nnz = nnz + 1
+						ind1(nnz) = t1
+						ind2(nnz) = t2
+					endif
+				endif
+			enddo
+			enddo
+			!
+			if (nnz == nnz0) exit
+			if (err_sum < 1.d-9) exit
 		enddo
+		!write(*,*) iter
 		!
-		lwork = 3*nnz
-		allocate(ipiv(nnz))
-		allocate(work(lwork))
-		call dgetrf(nnz,nnz,sigma,nnz,ipiv,err_msg)
-		call dgetri(nnz,sigma,nnz,ipiv,work,lwork,err_msg)
-		xx = matmul(sigma,ss)
+		deallocate(ind1,ind2,ind0)
 		!
-		do t1 = 1,nnz
-			WW = WW + xx(t1,1)*matmul( P1(:,ind1(t1):ind1(t1)), P2(ind2(t1):ind2(t1),:) )
-		enddo
-		!
-		deallocate(ind1,ind2,sigma,ss,xx,ipiv,work)
-		!
-	end subroutine remove_neg
+		!write(*,*) 'iter=',iter
+		!do t1 = 1, nstate
+		!	write(*,'(6(ES16.8,1X))')  WW(t1,:)
+		!enddo
+		!write(*,*) '-----'
+		!do t1 = 1, nstate
+		!	write(*,'(6(ES16.8,1X))')  TT(t1,:)
+		!enddo
+		!write(*,*) ''
+	end subroutine remove_neg_increment
 	!
 	!
 	subroutine test_U()
