@@ -803,10 +803,8 @@ module benchmark_system
 		!
 		real(dp)   , allocatable       :: T_trans(:,:), p_trans(:,:)
 		real(dp)                       :: drate
-		real(dp)   , allocatable       :: pop_f(:,:), pop_l(:,:), dpop(:,:), ppop_dl(:,:), ppop_ll(:,:)
-		real(dp)   , allocatable       :: P1(:,:), P2(:,:), WW(:,:),one(:,:), eye(:,:), p_trans_opt(:,:)
-		real(dp)                       :: err_sum
-		integer                        :: idt, istate, jstate, t1
+		real(dp)   , allocatable       :: WW(:,:), p_trans_opt(:,:)
+		integer                        :: idt, istate, jstate
 		!
 		if ( allocated(psi_f) ) deallocate(psi_f)
 		if ( allocated(pop_p) ) deallocate(pop_p)
@@ -817,23 +815,8 @@ module benchmark_system
 		allocate( U_dt(nstate,nstate) )
 		allocate( T_trans(nstate,nstate) )
 		allocate( p_trans(nstate,nstate) )
-		allocate( pop_f(nstate,1) )
-		allocate( pop_l(nstate,1) )
-		allocate( dpop (nstate,1) )
-		allocate( one  (nstate,1) )
-		allocate( P1     (nstate,nstate) )
-		allocate( P2     (nstate,nstate) )
 		allocate( WW     (nstate,nstate) )
-		allocate( eye    (nstate,nstate) )
-		allocate( ppop_dl(nstate,nstate) )
-		allocate( ppop_ll(nstate,nstate) )
 		allocate( p_trans_opt(nstate,nstate) )
-		!
-		one = 1.d0
-		eye = 0.d0
-		do istate = 1,nstate
-			eye(istate,istate) = 1.d0
-		enddo
 		!
 		psi_l(:,1) = psi0
 		psi_l = matmul(Ut(:,:,1), psi_l)
@@ -874,25 +857,8 @@ module benchmark_system
 			!! naive integration for dp = p_trans*p*dt
 			!pop_p = pop_p + matmul(p_trans,pop_p)*dt
 			!-------------------
-			! get the constained solution without boundaries
-			pop_f = dble(abs(psi_f)**2)
-			pop_l = dble(abs(psi_l)**2)
-			dpop = pop_f - pop_l
-			ppop_dl = matmul(dpop ,transpose(pop_l)) / dot_product(pop_l(:,1),pop_l(:,1))
-			ppop_ll = matmul(pop_l,transpose(pop_l)) / dot_product(pop_l(:,1),pop_l(:,1))
-			P1 = eye-matmul(one,transpose(one))/nstate
-			P2 = eye-ppop_ll
-			p_trans_opt = matmul(matmul(P1, p_trans*dt), P2) + ppop_dl
 			!
-			! applying boundaries iteratively
-			! TODO: need to find a better algorithm
-			WW = p_trans_opt
-			do istate = 1,nstate
-				WW(istate,istate) = WW(istate,istate) + 1.d0
-			enddo
-			!
-			call remove_neg_increment(P1, P2, WW, p_trans*dt, 1000)
-			!
+			call generate_exact_p_increment(psi_l,psi_f,WW,p_trans*dt)
 			! Note that W = P + I
 			!
 			! safeguard for still negative matrix elements
@@ -915,7 +881,7 @@ module benchmark_system
 		enddo
 		!
 		deallocate( psi_l,U_dt,T_trans,p_trans )
-		deallocate( pop_f,pop_l,dpop,ppop_dl,ppop_ll,one,P1,P2,WW,eye,p_trans_opt )
+		deallocate( WW,p_trans_opt )
 		!
 	end subroutine final_psi_hop_loc01_dt
 	!
@@ -1318,6 +1284,58 @@ module benchmark_system
 			if (rand(0) < 0.5d0) U(:,istate) = -U(:,istate)
 		enddo
 	end subroutine
+	!
+	!
+	subroutine generate_exact_p_increment(psi_l, psi_f, WW, Q0)
+		implicit none
+		!
+		complex(dp), dimension(:,:)  :: psi_l, psi_f
+		real(dp)   , dimension(:,:)  :: Q0
+		real(dp)   , allocatable     :: WW(:,:)
+		!
+		real(dp)   , allocatable     :: pop_f(:,:), pop_l(:,:), dpop(:,:), ppop_dl(:,:), ppop_ll(:,:)
+		real(dp)   , allocatable     :: P1(:,:), P2(:,:), one(:,:), eye(:,:)
+		integer                      :: istate
+		!
+		if (.not. allocated(WW)) allocate( WW(nstate,nstate) )
+		!
+		allocate( pop_f(nstate,1) )
+		allocate( pop_l(nstate,1) )
+		allocate( dpop (nstate,1) )
+		allocate( one  (nstate,1) )
+		allocate( P1     (nstate,nstate) )
+		allocate( P2     (nstate,nstate) )
+		allocate( eye    (nstate,nstate) )
+		allocate( ppop_dl(nstate,nstate) )
+		allocate( ppop_ll(nstate,nstate) )
+		!
+		one = 1.d0
+		eye = 0.d0
+		do istate = 1,nstate
+			eye(istate,istate) = 1.d0
+		enddo
+		!
+		! get the constained solution without boundaries
+		pop_f = dble(abs(psi_f)**2)
+		pop_l = dble(abs(psi_l)**2)
+		dpop = pop_f - pop_l
+		ppop_dl = matmul(dpop ,transpose(pop_l)) / dot_product(pop_l(:,1),pop_l(:,1))
+		ppop_ll = matmul(pop_l,transpose(pop_l)) / dot_product(pop_l(:,1),pop_l(:,1))
+		P1 = eye-matmul(one,transpose(one))/nstate
+		P2 = eye-ppop_ll
+		WW = matmul(matmul(P1, Q0), P2) + ppop_dl
+		!
+		! applying boundaries iteratively
+		! TODO: need to find a better algorithm
+		do istate = 1,nstate
+			WW(istate,istate) = WW(istate,istate) + 1.d0
+		enddo
+		!
+		call remove_neg_increment(P1, P2, WW, Q0, 1000)
+		!
+		deallocate(pop_f,pop_l,dpop,one,P1,P2,eye,ppop_dl,ppop_ll)
+		!
+	end subroutine generate_exact_p_increment
 	!
 	!
 	subroutine remove_neg_increment(P1, P2, WW, TT, niter)
