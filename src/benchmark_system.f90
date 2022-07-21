@@ -858,7 +858,8 @@ module benchmark_system
 			!pop_p = pop_p + matmul(p_trans,pop_p)*dt
 			!-------------------
 			!
-			call generate_exact_p_increment(psi_l,psi_f,WW,p_trans*dt)
+			!call generate_exact_p_increment(psi_l,psi_f,WW,p_trans*dt)
+			call generate_approx_p(psi_l,psi_f,WW,p_trans*dt)
 			! Note that W = P + I
 			!
 			! safeguard for still negative matrix elements
@@ -1454,6 +1455,161 @@ module benchmark_system
 		!enddo
 		!write(*,*) ''
 	end subroutine remove_neg_increment
+	!
+	!
+	subroutine generate_approx_p(psi_l, psi_f, WW, Q0)
+		implicit none
+		!
+		complex(dp), dimension(:,:)  :: psi_l, psi_f
+		real(dp)   , dimension(:,:)  :: Q0
+		real(dp)   , allocatable     :: WW(:,:)
+		!
+		real(dp)   , allocatable     :: pop_f(:,:), pop_l(:,:), dpop(:,:), ppop_ll(:,:)
+		real(dp)   , allocatable     :: P1(:,:), P2(:,:), Pd(:,:), one(:,:), eye(:,:), QQ(:,:)
+		real(dp)                     :: alpha, beta, alpha_1, alpha_2, err_sum
+		integer                      :: t1,t2, iter, niter
+		!
+		if (.not. allocated(WW)) allocate( WW(nstate,nstate) )
+		!
+		allocate( pop_f(nstate,1) )
+		allocate( pop_l(nstate,1) )
+		allocate( dpop (nstate,1) )
+		allocate( one  (nstate,1) )
+		allocate( P1     (nstate,nstate) )
+		allocate( P2     (nstate,nstate) )
+		allocate( Pd     (nstate,nstate) )
+		allocate( eye    (nstate,nstate) )
+		allocate( QQ     (nstate,nstate) )
+		allocate( ppop_ll(nstate,nstate) )
+		!
+		one = 1.d0
+		eye = 0.d0
+		do t1 = 1,nstate
+			eye(t1,t1) = 1.d0
+		enddo
+		!
+		pop_f = dble(abs(psi_f)**2)
+		pop_l = dble(abs(psi_l)**2)
+		dpop = pop_f - pop_l
+		!
+		P1 = eye-matmul(one,transpose(one))/nstate
+		Pd = matmul(dpop,transpose(pop_l))
+		!
+		alpha_1 = 1.d-7
+		alpha_2 = 1.d0
+		alpha = alpha_1
+		niter = 20
+		do iter = 1, niter
+			beta = 1.d0-alpha
+			ppop_ll = matmul(pop_l,transpose(pop_l))
+			P2 = eye-(beta/(alpha+beta*dot_product(pop_l(:,1),pop_l(:,1))))*ppop_ll
+			!
+			call optimize_approx_hop(P1,P2,Pd,Q0,WW,alpha)
+			!
+			! check if this alpha is good
+			QQ = WW + eye
+			err_sum = 0.d0
+			do t1 = 1,nstate
+			do t2 = 1,nstate
+				if (QQ(t1,t2) < 0.d0) err_sum = err_sum - QQ(t1,t2)
+			enddo
+			enddo
+			!
+			if (err_sum < 1d-14) then
+				alpha_2 = alpha
+				alpha = (alpha_1+alpha_2)/2.d0
+			else
+				alpha_1 = alpha
+				alpha = (alpha_1+alpha_2)/2.d0
+			endif
+		enddo
+		!
+		WW = WW + eye
+		!
+		deallocate(pop_f,pop_l,dpop,one,P1,P2,Pd,eye,QQ,ppop_ll)
+		!
+	end subroutine generate_approx_p
+	!
+	!
+	subroutine optimize_approx_hop(P1,P2,Pd,TT,WW,alpha)
+		implicit none
+		!
+		real(dp), dimension(:,:)  :: P1, P2, Pd, TT
+		real(dp)                  :: alpha, beta
+		real(dp), allocatable     :: WW(:,:)
+		!
+		real(dp), allocatable     :: sigma(:,:), ss(:,:), xx(:,:)
+		integer , allocatable     :: ind1(:), ind2(:)
+		real(dp), allocatable     :: eye(:,:), S_mat(:,:), ss_full(:,:)
+		integer                   :: nnz, t1, t2
+		!
+		integer                   :: err_msg, lwork
+		integer, allocatable      :: ipiv(:), work(:)
+		!
+		beta = 1.d0 - alpha
+		if (.not. allocated(WW)) allocate(WW(nstate,nstate))
+		!
+		allocate( ind1(nstate*nstate) )
+		allocate( ind2(nstate*nstate) )
+		allocate( eye    (nstate, nstate) )
+		allocate( S_mat  (nstate, nstate) )
+		allocate( ss_full(nstate, nstate) )
+		!
+		eye = 0.d0
+		do t1 = 1,nstate
+			eye(t1,t1) = 1.d0
+		enddo
+		!
+		nnz = 0
+		do t1 = 1,nstate
+		do t2 = 1,nstate
+			if (t1 == t2) then
+				if (TT(t1,t2) < 1.d-14 - 1.d0) then
+					nnz = nnz + 1
+					ind1(nnz) = t1
+					ind2(nnz) = t2
+				endif
+			else
+				if (TT(t1,t2) < 1.d-14) then
+					nnz = nnz + 1
+					ind1(nnz) = t1
+					ind2(nnz) = t2
+				endif
+			endif
+		enddo
+		enddo
+		!
+		! nnz must be > 0
+		S_mat = alpha*matmul(matmul(P1,TT),P2)+beta*matmul(Pd,P2)+alpha*eye
+		!
+		allocate(sigma(nnz,nnz))
+		allocate(ss(nnz,1))
+		allocate(xx(nnz,1))
+		!
+		do t1 = 1,nnz
+			ss(t1,1) = -S_mat(ind1(t1),ind2(t1))
+			do t2 = 1,nnz
+				sigma(t1,t2) = P1(ind1(t1),ind1(t2))*P2(ind2(t2),ind2(t1))
+			enddo
+		enddo
+		!
+		lwork = 3*nnz
+		allocate(ipiv(nnz))
+		allocate(work(lwork))
+		call dgetrf(nnz,nnz,sigma,nnz,ipiv,err_msg)
+		call dgetri(nnz,sigma,nnz,ipiv,work,lwork,err_msg)
+		!
+		xx = matmul(sigma,ss)
+		!
+		ss_full = 0.d0
+		do t1 = 1,nnz
+			ss_full(ind1(t1),ind2(t1)) = xx(t1,1)
+		enddo
+		WW = (matmul(matmul(P1,ss_full),P2)+S_mat)/alpha-eye
+		!
+		deallocate(sigma,ss,xx,ipiv,work,ind1,ind2,eye,S_mat,ss_full)
+		!
+	end subroutine optimize_approx_hop
 	!
 	!
 	subroutine test_U()
