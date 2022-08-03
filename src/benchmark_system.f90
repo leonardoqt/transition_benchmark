@@ -507,7 +507,8 @@ module benchmark_system
 		!
 		do idt = 1, nT-1
 			Tv = logm( matmul(transpose(U(:,:,idt)),U(:,:,idt+1)) ) / dt
-			call single_rho_hop_interp(E(:,idt),E(:,idt+1),Tv,dt,rho_f,pop_p,threshold)
+			!call single_rho_hop_interp(E(:,idt),E(:,idt+1),Tv,dt,rho_f,pop_p,threshold)
+			call single_rho_hop_interp_exact(E(:,idt),E(:,idt+1),Tv,dt,rho_f,pop_p)
 		enddo
 		!
 		deallocate(Tv)
@@ -581,6 +582,83 @@ module benchmark_system
 		deallocate(iHTdt,U_dt,rho_new,T_trans,p_trans)
 		!
 	end subroutine single_rho_hop_interp
+	!
+	!
+	recursive subroutine single_rho_hop_interp_exact(E1,E2,Tv,dt_interp,rho_t,pop_t)
+		! calculate the evolution of rho_t and pop_t of a single time interval
+		! if hop is too big, interpolate with dt_interp/10
+		!
+		implicit none
+		!
+		real(dp), dimension(:)      :: E1, E2
+		real(dp), dimension(:,:)    :: Tv, pop_t
+		real(dp)                    :: dt_interp
+		complex(dp), dimension(:,:) :: rho_t
+		!
+		complex(dp), allocatable    :: iHTdt(:,:), U_dt(:,:), rho_new(:,:)
+		real(dp)   , allocatable    :: T_trans(:,:), p_trans(:,:), WW(:,:)
+		real(dp)                    :: drate
+		integer                     :: istate, jstate, t1, all_good
+		!
+		allocate( iHTdt  (nstate,nstate) )
+		allocate( U_dt   (nstate,nstate) )
+		allocate( rho_new(nstate,nstate) )
+		allocate( T_trans(nstate,nstate) )
+		allocate( p_trans(nstate,nstate) )
+		allocate( WW     (nstate,nstate) )
+		!
+		iHTdt = (0.d0, 0.d0)
+		do istate = 1, nstate
+			iHTdt(istate,istate) = cmplx(0.d0, -(E1(istate)+E2(istate))/2*dt_interp, dp)
+		enddo
+		iHTdt = iHTdt - Tv * dt_interp
+		U_dt = expm(iHTdt)
+		rho_new = matmul( matmul(U_dt,rho_t),transpose(conjg(U_dt)) )
+		!
+		T_trans = 0.d0
+		do istate = 1, nstate
+			do jstate = 1, nstate
+				if ( jstate .ne. istate ) then
+					drate = 2 * dble( Tv(istate,jstate)*rho_new(jstate,istate) ) / dble( rho_t(istate,istate) + 1.d-13)
+					if ( drate > 0.d0 ) T_trans(istate,jstate) = drate*dt_interp
+				endif
+			enddo
+		enddo
+		!
+		! generate p_trans
+		do istate = 1, nstate
+			if ( sum(T_trans(istate,:)) > 1.d0 ) T_trans(istate,:) = T_trans(istate,:) / sum(T_trans(istate,:))
+		enddo
+		p_trans = transpose(T_trans)
+		do istate = 1, nstate
+			p_trans(istate,istate) = p_trans(istate,istate) - sum(T_trans(istate,:))
+		enddo
+		!
+		! find the exact WW
+		call generate_exact_p_increment(rho_t,rho_new,WW,p_trans)
+		! Note that W = p_trans + I
+		!
+		if ( minval(WW) > -1.d-7 ) then
+			! do not need interpolate
+			p_trans = WW
+			do istate = 1,nstate
+				p_trans(istate,istate) = p_trans(istate,istate) - 1.d0
+			enddo
+			pop_t = pop_t + matmul(p_trans,pop_t)
+			rho_t = rho_new
+		elseif( dt_interp < 1.d-8 ) then
+			pop_t = pop_t + matmul(p_trans,pop_t)
+			rho_t = rho_new
+		else
+			! need interpolate
+			do t1 = 1,10
+				call single_rho_hop_interp_exact(E1+(E2-E1)*(t1-1)/10.d0,E1+(E2-E1)*t1/10.d0,Tv,dt_interp/10,rho_t,pop_t)
+			enddo
+		endif
+		!
+		deallocate(iHTdt,U_dt,rho_new,T_trans,p_trans,WW)
+		!
+	end subroutine single_rho_hop_interp_exact
 	!
 	!
 	subroutine final_psi_hop_interp_dt(Ut, Tv, psi_f, pop_p, nqT)
@@ -1322,10 +1400,10 @@ module benchmark_system
 	end subroutine
 	!
 	!
-	subroutine generate_exact_p_increment(psi_l, psi_f, WW, Q0)
+	subroutine generate_exact_p_increment(rho_l, rho_f, WW, Q0)
 		implicit none
 		!
-		complex(dp), dimension(:,:)  :: psi_l, psi_f
+		complex(dp), dimension(:,:)  :: rho_l, rho_f
 		real(dp)   , dimension(:,:)  :: Q0
 		real(dp)   , allocatable     :: WW(:,:)
 		!
@@ -1352,8 +1430,10 @@ module benchmark_system
 		enddo
 		!
 		! get the constained solution without boundaries
-		pop_f = dble(abs(psi_f)**2)
-		pop_l = dble(abs(psi_l)**2)
+		do istate = 1,nstate
+			pop_f(istate,1) = dble(rho_f(istate,istate))
+			pop_l(istate,1) = dble(rho_l(istate,istate))
+		enddo
 		dpop = pop_f - pop_l
 		ppop_dl = matmul(dpop ,transpose(pop_l)) / dot_product(pop_l(:,1),pop_l(:,1))
 		ppop_ll = matmul(pop_l,transpose(pop_l)) / dot_product(pop_l(:,1),pop_l(:,1))
@@ -1367,7 +1447,7 @@ module benchmark_system
 			WW(istate,istate) = WW(istate,istate) + 1.d0
 		enddo
 		!
-		call remove_neg_increment(P1, P2, WW, Q0, 1000)
+		call remove_neg_increment(P1, P2, WW, Q0, 10)
 		!
 		deallocate(pop_f,pop_l,dpop,one,P1,P2,eye,ppop_dl,ppop_ll)
 		!
