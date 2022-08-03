@@ -236,72 +236,6 @@ module benchmark_system
 	end subroutine evo_npi_interp
 	!
 	!
-	subroutine evo_npi_interp_testH1(Ut, Tv, nqT)
-		! directly use eigenvalue of interpolated local diabats as adiabatic surface
-		!
-		implicit none
-		!
-		complex(dp), allocatable :: Ut(:,:,:)
-		real(dp)   , allocatable :: Tv(:,:,:)
-		integer                  :: nqT ! number of quantum time steps in each ionic time step
-		!
-		real(dp)   , allocatable :: H_ld0(:,:), H_ld1(:,:), H_ldt(:,:), E_a_ld(:), U_tmp(:,:)
-		complex(dp), allocatable :: U_dt(:,:), iHTdt(:,:)
-		integer :: idt, iqt, istate
-		!
-		!
-		if ( allocated(Ut) ) deallocate(Ut)
-		if ( allocated(Tv) ) deallocate(Tv)
-		allocate( Ut(nstate,nstate,(nT-1)*nqT+1 ) )
-		allocate( Tv(nstate,nstate,(nT-1)*nqT   ) )
-		!
-		allocate(  H_ld0(nstate,nstate) )
-		allocate(  H_ld1(nstate,nstate) )
-		allocate(  H_ldt(nstate,nstate) )
-		allocate(  U_tmp(nstate,nstate) )
-		allocate( E_a_ld(nstate)        )
-		allocate(  U_dt(nstate,nstate) )
-		allocate( iHTdt(nstate,nstate) )
-		!
-		do idt = 1, nT-1
-			Tv(:,:,(idt-1)*nqT+1) = logm( matmul(transpose(U(:,:,idt)),U(:,:,idt+1)) ) / dt
-			do iqt = 2, nqT
-				Tv(:,:,(idt-1)*nqT+iqt) = Tv(:,:,(idt-1)*nqT+1)
-			enddo
-		enddo
-		!
-		! evolution of rho
-		Ut(:,:,1) = transpose( U(:,:,1) )
-		do idt = 1, nT-1
-			!
-			H_ld0 = 0.d0
-			do istate = 1, nstate
-				H_ld0(istate,istate) = E(istate,idt)
-			enddo
-			!
-			H_ld1 = matmul(matmul(transpose(U(:,:,idt)),H(:,:,idt+1)),U(:,:,idt))
-			H_ld1 = H_ld1 - H_ld0
-			!
-			do iqt = 1, nqT
-				iHTdt = (0.d0, 0.d0)
-				! Here we choose to first get avarage H at 1/2 dt then directly use its eigenvalue
-				! Alternatively, one can get H at dt and get interpolate eigenvalue at 1/2 dt
-				H_ldt = H_ld0 + H_ld1*((iqt-0.5d0)/nqT)
-				call diag_real(H_ldt,U_tmp,E_a_ld)
-				do istate = 1, nstate
-					iHTdt(istate,istate) = cmplx(0.d0, -E_a_ld(istate)*(dt/nqT), dp)
-				enddo
-				iHTdt = iHTdt - Tv(:,:,(idt-1)*nqT+iqt)*(dt/nqT)
-				U_dt = expm(iHTdt)
-				Ut(:,:,(idt-1)*nqT+iqt+1) = matmul( U_dt, Ut(:,:,(idt-1)*nqT+iqt) )
-			enddo
-		enddo
-		!
-		deallocate(H_ld0,H_ld1,H_ldt,U_tmp,E_a_ld,U_dt,iHTdt)
-		!
-	end subroutine evo_npi_interp_testH1
-	!
-	!
 	subroutine evo_hst(Ut, Tv)
 		! it generates Ut and Tv rate, such that Ut*rho_diabat*Ut^\dagger is rho(t)_adiabats
 		! and Tv*dt is the hopping rate
@@ -546,6 +480,107 @@ module benchmark_system
 		deallocate(U_dt,T_trans,p_trans)
 		!
 	end subroutine final_rho_hop_interp
+	!
+	!
+	subroutine final_rho_hop_conditional_interp(rho_f, pop_p, threshold)
+		! instead of using Ut and T, it directly use U and E to calculate Ut and T
+		! therefore no evo_xxx needs to be called beforehand
+		!
+		implicit none
+		!
+		complex(dp), allocatable       :: rho_f(:,:)
+		real(dp)   , allocatable       :: pop_p(:,:), Tv(:,:)
+		real(dp)                       :: threshold
+		!
+		integer                        :: idt, istate
+		!
+		if ( allocated(rho_f) ) deallocate(rho_f)
+		if ( allocated(pop_p) ) deallocate(pop_p)
+		allocate( rho_f(nstate,nstate) )
+		allocate( pop_p(nstate,1) )
+		allocate( Tv(nstate,nstate) )
+		!
+		rho_f = matmul( matmul( transpose(U(:,:,1)),rho0 ), U(:,:,1) )
+		do istate = 1, nstate
+			pop_p(istate,1) = dble(rho_f(istate,istate))
+		enddo
+		!
+		do idt = 1, nT-1
+			Tv = logm( matmul(transpose(U(:,:,idt)),U(:,:,idt+1)) ) / dt
+			call single_rho_hop_interp(E(:,idt),E(:,idt+1),Tv,dt,rho_f,pop_p,threshold)
+		enddo
+		!
+		deallocate(Tv)
+		!
+	end subroutine
+	!
+	recursive subroutine single_rho_hop_interp(E1,E2,Tv,dt_interp,rho_t,pop_t,threshold)
+		! calculate the evolution of rho_t and pop_t of a single time interval
+		! if hop is too big, interpolate with dt_interp/10
+		!
+		implicit none
+		!
+		real(dp), dimension(:)      :: E1, E2
+		real(dp), dimension(:,:)    :: Tv, pop_t
+		real(dp)                    :: dt_interp,threshold
+		complex(dp), dimension(:,:) :: rho_t
+		!
+		complex(dp), allocatable    :: iHTdt(:,:), U_dt(:,:), rho_new(:,:)
+		real(dp)   , allocatable    :: T_trans(:,:), p_trans(:,:)
+		real(dp)                    :: drate
+		integer                     :: istate, jstate, t1, all_good
+		!
+		allocate( iHTdt  (nstate,nstate) )
+		allocate( U_dt   (nstate,nstate) )
+		allocate( rho_new(nstate,nstate) )
+		allocate( T_trans(nstate,nstate) )
+		allocate( p_trans(nstate,nstate) )
+		!
+		iHTdt = (0.d0, 0.d0)
+		do istate = 1, nstate
+			iHTdt(istate,istate) = cmplx(0.d0, -(E1(istate)+E2(istate))/2*dt_interp, dp)
+		enddo
+		iHTdt = iHTdt - Tv * dt_interp
+		U_dt = expm(iHTdt)
+		rho_new = matmul( matmul(U_dt,rho_t),transpose(conjg(U_dt)) )
+		!
+		T_trans = 0.d0
+		do istate = 1, nstate
+			do jstate = 1, nstate
+				if ( jstate .ne. istate ) then
+					drate = 2 * dble( Tv(istate,jstate)*rho_new(jstate,istate) ) / dble( rho_t(istate,istate) + 1.d-13)
+					if ( drate > 0.d0 ) T_trans(istate,jstate) = drate*dt_interp
+				endif
+			enddo
+		enddo
+		!
+		! check if all good
+		all_good = 1
+		do istate = 1, nstate
+			if (sum(T_trans(istate,:)) > threshold) then
+				all_good = 0
+				exit
+			endif
+		enddo
+		!
+		if ( all_good > 0 .or. dt_interp < 1.d-7 ) then
+			! do not need interpolate
+			p_trans = transpose(T_trans)
+			do istate = 1, nstate
+				p_trans(istate,istate) = p_trans(istate,istate) - sum(T_trans(istate,:))
+			enddo
+			pop_t = pop_t + matmul(p_trans,pop_t)
+			rho_t = rho_new
+		else
+			! need interpolate
+			do t1 = 1,10
+				call single_rho_hop_interp(E1+(E2-E1)*(t1-1)/10.d0,E1+(E2-E1)*t1/10.d0,Tv,dt_interp/10,rho_t,pop_t,threshold)
+			enddo
+		endif
+		!
+		deallocate(iHTdt,U_dt,rho_new,T_trans,p_trans)
+		!
+	end subroutine single_rho_hop_interp
 	!
 	!
 	subroutine final_psi_hop_interp_dt(Ut, Tv, psi_f, pop_p, nqT)
@@ -854,28 +889,28 @@ module benchmark_system
 			enddo
 			!
 			!========================================
-			!! naive integration for dp = p_trans*p*dt
-			!pop_p = pop_p + matmul(p_trans,pop_p)*dt
+			! naive integration for dp = p_trans*p*dt
+			pop_p = pop_p + matmul(p_trans,pop_p)*dt
 			!-------------------
-			!
-			!call generate_exact_p_increment(psi_l,psi_f,WW,p_trans*dt)
-			call generate_approx_p(psi_l,psi_f,WW,p_trans*dt)
-			! Note that W = P + I
-			!
-			! safeguard for still negative matrix elements
-			do istate = 1,nstate
-			do jstate = 1,nstate
-				if ( WW(istate,jstate) < 0.d0) WW(istate,jstate) = 0.d0
-			enddo
-			enddo
-			!
-			p_trans_opt = WW
-			do istate = 1,nstate
-				p_trans_opt(istate,istate) = p_trans_opt(istate,istate) - sum(p_trans_opt(:,istate))
-				if (p_trans_opt(istate,istate) < -1.d0) p_trans_opt(:,istate) = -p_trans_opt(:,istate) / p_trans_opt(istate,istate)
-			enddo
-			!
-			pop_p = pop_p + matmul(p_trans_opt,pop_p)
+			!!
+			!!call generate_exact_p_increment(psi_l,psi_f,WW,p_trans*dt)
+			!call generate_approx_p(psi_l,psi_f,WW,p_trans*dt)
+			!! Note that W = P + I
+			!!
+			!! safeguard for still negative matrix elements
+			!do istate = 1,nstate
+			!do jstate = 1,nstate
+			!	if ( WW(istate,jstate) < 0.d0) WW(istate,jstate) = 0.d0
+			!enddo
+			!enddo
+			!!
+			!p_trans_opt = WW
+			!do istate = 1,nstate
+			!	p_trans_opt(istate,istate) = p_trans_opt(istate,istate) - sum(p_trans_opt(:,istate))
+			!	if (p_trans_opt(istate,istate) < -1.d0) p_trans_opt(:,istate) = -p_trans_opt(:,istate) / p_trans_opt(istate,istate)
+			!enddo
+			!!
+			!pop_p = pop_p + matmul(p_trans_opt,pop_p)
 			!========================================
 			!
 			psi_l = psi_f

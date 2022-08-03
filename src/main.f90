@@ -1,9 +1,9 @@
 program test
 	!
 	use benchmark_system,  only: assign_model, assign_psi, Uini, nT, &
-	                             evo_npi_interp, evo_npi_interp_testH1, evo_npi, evo_hst, evo_loc01, evo_rho_diab, &
+	                             evo_npi_interp, evo_npi, evo_hst, evo_loc01, evo_rho_diab, &
 	                             final_rho_hop, final_rho_hop_loc19, final_psi_hop_loc01, final_psi_hop_loc01_dt, &
-	                             final_rho_hop_interp, final_psi_hop_interp_dt, &
+	                             final_rho_hop_interp, final_psi_hop_interp_dt, final_rho_hop_conditional_interp, &
 	                             test_U, test_T, test_E, test_H!, ZY_correct_sign_full, nstate
 	use model_H,           only: H_sys_single, H_sys_rotate, H_sys_parallel, H_sys_mix
 	use iso_fortran_env,   only: dp=> real64
@@ -11,8 +11,8 @@ program test
 	implicit none
 	!
 	real(dp)   , allocatable :: Tv(:,:,:), &
-	                            pop_p_npi_dq(:,:), pop_p_npi_t_dq(:,:), pop_p_npi(:,:), pop_p_npi_t(:,:), pop_p_hst(:,:), &
-	                            pop_p_loc01(:,:), pop_p_loc01_l(:,:), pop_p_loc01_t(:,:), pop_p_loc19(:,:)
+	                            pop_p_npi_dq(:,:), pop_p_npi_cdq(:,:), pop_p_npi_t_dq(:,:), pop_p_npi(:,:), pop_p_npi_t(:,:), &
+	                            pop_p_hst(:,:), pop_p_loc01(:,:), pop_p_loc01_l(:,:), pop_p_loc01_t(:,:), pop_p_loc19(:,:)
 	!
 	complex(dp), allocatable :: psi(:), Ut(:,:,:), rho_f_npi_dq(:,:), rho_f_npi(:,:), rho_f_hst(:,:), &
 	                            rho_f_loc(:,:), psi_f(:,:)
@@ -70,8 +70,8 @@ program test
 	call assign_psi(psi)
 	!
 	call evo_npi_interp(Ut, Tv, nqT)
-	!call evo_npi_interp_testH1(Ut, Tv, nqT)
 	call final_rho_hop_interp(Ut, Tv, rho_f_npi_dq, pop_p_npi_dq, nqT)
+	call final_rho_hop_conditional_interp(rho_f_npi_dq, pop_p_npi_cdq, 0.1d0)
 	call final_psi_hop_interp_dt(Ut, Tv, psi_f, pop_p_npi_t_dq, nqT)
 	!
 	!
@@ -129,6 +129,7 @@ program test
 	!
 	write(*,*) 'Population from actual hopping'
 	write(*,'("NPI-dqT  " '//adjustl(f_sz)//'(ES18.10,1X))') pop_p_npi_dq
+	write(*,'("NPI-cdqT " '//adjustl(f_sz)//'(ES18.10,1X))') pop_p_npi_cdq
 	write(*,'("NPI-t-dqT" '//adjustl(f_sz)//'(ES18.10,1X))') pop_p_npi_t_dq
 	write(*,'("NPI      " '//adjustl(f_sz)//'(ES18.10,1X))') pop_p_npi
 	write(*,'("NPI-t    " '//adjustl(f_sz)//'(ES18.10,1X))') pop_p_npi_t
