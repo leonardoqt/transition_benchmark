@@ -482,7 +482,7 @@ module benchmark_system
 	end subroutine final_rho_hop_interp
 	!
 	!
-	subroutine final_rho_hop_conditional_interp(rho_f, pop_p, threshold)
+	subroutine final_rho_hop_conditional_interp(rho_f, pop_p, threshold, num_extra_call)
 		! instead of using Ut and T, it directly use U and E to calculate Ut and T
 		! therefore no evo_xxx needs to be called beforehand
 		!
@@ -491,6 +491,7 @@ module benchmark_system
 		complex(dp), allocatable       :: rho_f(:,:)
 		real(dp)   , allocatable       :: pop_p(:,:), Tv(:,:)
 		real(dp)                       :: threshold
+		integer                        :: num_extra_call
 		!
 		integer                        :: idt, istate
 		!
@@ -507,15 +508,15 @@ module benchmark_system
 		!
 		do idt = 1, nT-1
 			Tv = logm( matmul(transpose(U(:,:,idt)),U(:,:,idt+1)) ) / dt
-			!call single_rho_hop_interp(E(:,idt),E(:,idt+1),Tv,dt,rho_f,pop_p,threshold)
-			call single_rho_hop_interp_exact(E(:,idt),E(:,idt+1),Tv,dt,rho_f,pop_p)
+			call single_rho_hop_interp(E(:,idt),E(:,idt+1),Tv,dt,rho_f,pop_p,threshold,num_extra_call)
+			!call single_rho_hop_interp_exact(E(:,idt),E(:,idt+1),Tv,dt,rho_f,pop_p,num_extra_call)
 		enddo
 		!
 		deallocate(Tv)
 		!
 	end subroutine
 	!
-	recursive subroutine single_rho_hop_interp(E1,E2,Tv,dt_interp,rho_t,pop_t,threshold)
+	recursive subroutine single_rho_hop_interp(E1,E2,Tv,dt_interp,rho_t,pop_t,threshold,num_extra_call)
 		! calculate the evolution of rho_t and pop_t of a single time interval
 		! if hop is too big, interpolate with dt_interp/10
 		!
@@ -525,6 +526,7 @@ module benchmark_system
 		real(dp), dimension(:,:)    :: Tv, pop_t
 		real(dp)                    :: dt_interp,threshold
 		complex(dp), dimension(:,:) :: rho_t
+		integer                     :: num_extra_call
 		!
 		complex(dp), allocatable    :: iHTdt(:,:), U_dt(:,:), rho_new(:,:)
 		real(dp)   , allocatable    :: T_trans(:,:), p_trans(:,:)
@@ -564,7 +566,7 @@ module benchmark_system
 			endif
 		enddo
 		!
-		if ( all_good > 0 .or. dt_interp < 1.d-7 ) then
+		if ( all_good > 0 .or. dt_interp < dt / 1.d4 ) then
 			! do not need interpolate
 			p_trans = transpose(T_trans)
 			do istate = 1, nstate
@@ -574,8 +576,9 @@ module benchmark_system
 			rho_t = rho_new
 		else
 			! need interpolate
+			num_extra_call = num_extra_call+10
 			do t1 = 1,10
-				call single_rho_hop_interp(E1+(E2-E1)*(t1-1)/10.d0,E1+(E2-E1)*t1/10.d0,Tv,dt_interp/10,rho_t,pop_t,threshold)
+				call single_rho_hop_interp(E1+(E2-E1)*(t1-1)/10.d0,E1+(E2-E1)*t1/10.d0,Tv,dt_interp/10,rho_t,pop_t,threshold,num_extra_call)
 			enddo
 		endif
 		!
@@ -584,7 +587,7 @@ module benchmark_system
 	end subroutine single_rho_hop_interp
 	!
 	!
-	recursive subroutine single_rho_hop_interp_exact(E1,E2,Tv,dt_interp,rho_t,pop_t)
+	recursive subroutine single_rho_hop_interp_exact(E1,E2,Tv,dt_interp,rho_t,pop_t,num_extra_call)
 		! calculate the evolution of rho_t and pop_t of a single time interval
 		! if hop is too big, interpolate with dt_interp/10
 		!
@@ -594,6 +597,7 @@ module benchmark_system
 		real(dp), dimension(:,:)    :: Tv, pop_t
 		real(dp)                    :: dt_interp
 		complex(dp), dimension(:,:) :: rho_t
+		integer                     :: num_extra_call
 		!
 		complex(dp), allocatable    :: iHTdt(:,:), U_dt(:,:), rho_new(:,:)
 		real(dp)   , allocatable    :: T_trans(:,:), p_trans(:,:), WW(:,:)
@@ -646,13 +650,14 @@ module benchmark_system
 			enddo
 			pop_t = pop_t + matmul(p_trans,pop_t)
 			rho_t = rho_new
-		elseif( dt_interp < 1.d-8 ) then
+		elseif( dt_interp < dt/1.d4 ) then
 			pop_t = pop_t + matmul(p_trans,pop_t)
 			rho_t = rho_new
 		else
 			! need interpolate
+			num_extra_call = num_extra_call + 10
 			do t1 = 1,10
-				call single_rho_hop_interp_exact(E1+(E2-E1)*(t1-1)/10.d0,E1+(E2-E1)*t1/10.d0,Tv,dt_interp/10,rho_t,pop_t)
+				call single_rho_hop_interp_exact(E1+(E2-E1)*(t1-1)/10.d0,E1+(E2-E1)*t1/10.d0,Tv,dt_interp/10,rho_t,pop_t,num_extra_call)
 			enddo
 		endif
 		!

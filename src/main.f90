@@ -20,7 +20,7 @@ program test
 	real(dp)   , allocatable :: rho_diag_diab(:), rho_diag_npi_dq(:), rho_diag_npi(:), rho_diag_hst(:), rho_diag_loc(:)
 	real(dp)   , allocatable :: aux_vec(:,:)
 	real(dp)                 :: dt, shift, x0, x1
-	integer                  :: idt, imodel, sz, istate, ini_type, nqT
+	integer                  :: idt, imodel, sz, istate, ini_type, nqT, num_extra_call
 	character(len=100)       :: f_sz
 	!
 	!
@@ -69,9 +69,10 @@ program test
 	end select
 	call assign_psi(psi)
 	!
+	num_extra_call = 0
 	call evo_npi_interp(Ut, Tv, nqT)
 	call final_rho_hop_interp(Ut, Tv, rho_f_npi_dq, pop_p_npi_dq, nqT)
-	call final_rho_hop_conditional_interp(rho_f_npi_dq, pop_p_npi_cdq, 0.1d0)
+	call final_rho_hop_conditional_interp(rho_f_npi_dq, pop_p_npi_cdq, 1.d-2, num_extra_call)
 	call final_psi_hop_interp_dt(Ut, Tv, psi_f, pop_p_npi_t_dq, nqT)
 	!
 	!
@@ -138,6 +139,8 @@ program test
 	write(*,'("LOC01-l  " '//adjustl(f_sz)//'(ES18.10,1X))') pop_p_loc01_l
 	write(*,'("LOC01-t  " '//adjustl(f_sz)//'(ES18.10,1X))') pop_p_loc01_t
 	write(*,'("LOC19    " '//adjustl(f_sz)//'(ES18.10,1X))') pop_p_loc19
+	!
+	write(*,*) nT, nT+num_extra_call
 	!call test_E
 	!call test_H
 end program test
