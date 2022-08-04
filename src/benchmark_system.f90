@@ -1459,13 +1459,13 @@ module benchmark_system
 	end subroutine generate_exact_p_increment
 	!
 	!
-	subroutine remove_neg_increment(P1, P2, WW, TT, niter)
+	subroutine remove_neg_increment(P1, P2, WW, TT0, niter)
 		implicit none
 		!
-		real(dp), dimension(:,:)  :: P1, P2, WW, TT
+		real(dp), dimension(:,:)  :: P1, P2, WW, TT0
 		integer                   :: iter, niter
 		!
-		real(dp), allocatable     :: sigma(:,:), ss(:,:), xx(:,:)
+		real(dp), allocatable     :: TT(:,:), sigma(:,:), ss(:,:), xx(:,:)
 		integer , allocatable     :: ind1(:), ind2(:), ind0(:)
 		integer                   :: nnz, nnz0, t1, t2, t3
 		!
@@ -1474,6 +1474,8 @@ module benchmark_system
 		!
 		real(dp)                  :: err_sum
 		!
+		allocate( TT(nstate,nstate) )
+		TT = TT0
 		do t1 = 1, nstate
 			TT(t1,t1) = TT(t1,t1) + 1.d0
 		enddo
@@ -1561,9 +1563,8 @@ module benchmark_system
 			if (nnz == nnz0) exit
 			if (err_sum < 1.d-9) exit
 		enddo
-		!write(*,*) iter
 		!
-		deallocate(ind1,ind2,ind0)
+		deallocate(TT,ind1,ind2,ind0)
 		!
 		!write(*,*) 'iter=',iter
 		!do t1 = 1, nstate
