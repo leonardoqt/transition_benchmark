@@ -1,6 +1,6 @@
 program test
 	!
-	use benchmark_system,  only: assign_model, assign_psi, Uini, nT, &
+	use benchmark_system,  only: assign_model, assign_psi, Uini, nT, print_rho_Tvt, &
 	                             evo_npi_interp, evo_npi, evo_hst, evo_loc01, evo_rho_diab, &
 	                             final_rho_hop, final_rho_hop_loc19, final_psi_hop_loc01, final_psi_hop_loc01_dt, &
 	                             final_rho_hop_interp, final_psi_hop_interp_dt, final_rho_hop_conditional_interp, &
@@ -19,12 +19,12 @@ program test
 	!
 	real(dp)   , allocatable :: rho_diag_diab(:), rho_diag_npi_dq(:), rho_diag_npi(:), rho_diag_hst(:), rho_diag_loc(:)
 	real(dp)   , allocatable :: aux_vec(:,:)
-	real(dp)                 :: dt, shift, x0, x1
+	real(dp)                 :: dt, shift, x0, x1, threshold
 	integer                  :: idt, imodel, sz, istate, ini_type, nqT, num_extra_call
 	character(len=100)       :: f_sz
 	!
 	!
-	read(*,*) imodel, ini_type, sz, dt, shift, nqT
+	read(*,*) imodel, ini_type, sz, dt, shift, nqT, threshold
 	!
 	x0 = -0.5d0
 	x1 =  0.5d0
@@ -68,11 +68,13 @@ program test
 			psi = psi / aux_vec(1,1)
 	end select
 	call assign_psi(psi)
+	call print_rho_Tvt()
+	stop
 	!
 	num_extra_call = 0
 	call evo_npi_interp(Ut, Tv, nqT)
 	call final_rho_hop_interp(Ut, Tv, rho_f_npi_dq, pop_p_npi_dq, nqT)
-	call final_rho_hop_conditional_interp(rho_f_npi_dq, pop_p_npi_cdq, 1.d-2, num_extra_call)
+	call final_rho_hop_conditional_interp(rho_f_npi_dq, pop_p_npi_cdq, threshold, num_extra_call)
 	call final_psi_hop_interp_dt(Ut, Tv, psi_f, pop_p_npi_t_dq, nqT)
 	!
 	!

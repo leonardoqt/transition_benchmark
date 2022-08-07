@@ -1807,4 +1807,74 @@ module benchmark_system
 			enddo
 			deallocate(H_diag)
 	end subroutine
+	!
+	!
+	subroutine print_rho_Tvt()
+		! instead of using Ut and T, it directly use U and E to calculate Ut and T
+		! therefore no evo_xxx needs to be called beforehand
+		!
+		implicit none
+		!
+		complex(dp), allocatable       :: rho_f(:,:), iHTdt(:,:), U_dt(:,:)
+		real(dp)   , allocatable       :: Tv(:,:), T_trans(:,:)
+		!
+		integer                        :: idt, istate, jstate
+		real(dp), allocatable          :: rho_diag(:), Tvt_max(:)
+		real(dp)                       :: drate
+		character(len=100)             :: f_sz
+		!
+		allocate( rho_diag(nstate) )
+		allocate( Tvt_max (nstate) )
+		write(f_sz,*) nstate+1
+		!
+		allocate( rho_f  (nstate,nstate) )
+		allocate( Tv     (nstate,nstate) )
+		allocate( T_trans(nstate,nstate) )
+		allocate( iHTdt  (nstate,nstate) )
+		allocate( U_dt   (nstate,nstate) )
+		!
+		rho_f = matmul( matmul( transpose(U(:,:,1)),rho0 ), U(:,:,1) )
+		!
+		do idt = 1, nT-1
+			! print rho_ii
+			do istate = 1,nstate
+				rho_diag(istate) = dble(rho_f(istate,istate))
+			enddo
+			write(103,'('//adjustl(f_sz)//'(ES16.8,1X))') idt*dt, rho_diag
+			!
+			! prepare Tv and print max of each row of Tv
+			Tv = logm( matmul(transpose(U(:,:,idt)),U(:,:,idt+1)) ) / dt
+			do istate = 1,nstate
+				Tvt_max(istate) = maxval(Tv(istate,:)*dt)
+			enddo
+			write(104,'('//adjustl(f_sz)//'(ES16.8,1X))') idt*dt, Tvt_max
+			!
+			! update rho and print max of each row of hopping rate
+			iHTdt = (0.d0, 0.d0)
+			do istate = 1, nstate
+				iHTdt(istate,istate) = cmplx(0.d0, -(E(istate,idt)+E(istate,idt+1))/2*dt, dp)
+			enddo
+			iHTdt = iHTdt - Tv * dt
+			U_dt = expm(iHTdt)
+			rho_f = matmul( matmul(U_dt,rho_f),transpose(conjg(U_dt)) )
+			!
+			T_trans = 0.d0
+			do istate = 1, nstate
+				do jstate = 1, nstate
+					if ( jstate .ne. istate ) then
+						drate = 2 * dble( Tv(istate,jstate)*rho_f(jstate,istate) ) / dble( rho_f(istate,istate) + 1.d-13)
+						if ( drate > 0.d0 ) T_trans(istate,jstate) = drate
+					endif
+				enddo
+			enddo
+			do istate = 1,nstate
+				Tvt_max(istate) = maxval(T_trans(istate,:)*dt)
+			enddo
+			write(105,'('//adjustl(f_sz)//'(ES16.8,1X))') idt*dt, Tvt_max
+		enddo
+		!
+		deallocate(rho_f,Tv,iHTdt,U_dt,rho_diag,Tvt_max)
+		!
+	end subroutine
+	!
 end module benchmark_system
