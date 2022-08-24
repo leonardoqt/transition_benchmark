@@ -14,7 +14,7 @@ program test
 	                            pop_p_npi_dq(:,:), pop_p_npi_cdq(:,:), pop_p_npi_t_dq(:,:), pop_p_npi(:,:), pop_p_npi_t(:,:), &
 	                            pop_p_hst(:,:), pop_p_loc01(:,:), pop_p_loc01_l(:,:), pop_p_loc01_t(:,:), pop_p_loc19(:,:)
 	!
-	complex(dp), allocatable :: psi(:), Ut(:,:,:), rho_f_npi_dq(:,:), rho_f_npi(:,:), rho_f_hst(:,:), &
+	complex(dp), allocatable :: psi(:), Ut(:,:,:), rho_f_npi_cdq(:,:), rho_f_npi_dq(:,:), rho_f_npi(:,:), rho_f_hst(:,:), &
 	                            rho_f_loc(:,:), psi_f(:,:)
 	!
 	real(dp)   , allocatable :: rho_diag_diab(:), rho_diag_npi_dq(:), rho_diag_npi(:), rho_diag_hst(:), rho_diag_loc(:)
@@ -68,13 +68,13 @@ program test
 			psi = psi / aux_vec(1,1)
 	end select
 	call assign_psi(psi)
-	call print_rho_Tvt()
-	stop
+	!call print_rho_Tvt()
+	!stop
 	!
 	num_extra_call = 0
 	call evo_npi_interp(Ut, Tv, nqT)
 	call final_rho_hop_interp(Ut, Tv, rho_f_npi_dq, pop_p_npi_dq, nqT)
-	call final_rho_hop_conditional_interp(rho_f_npi_dq, pop_p_npi_cdq, threshold, num_extra_call)
+	call final_rho_hop_conditional_interp(rho_f_npi_cdq, pop_p_npi_cdq, threshold, num_extra_call)
 	call final_psi_hop_interp_dt(Ut, Tv, psi_f, pop_p_npi_t_dq, nqT)
 	!
 	!

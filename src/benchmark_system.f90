@@ -508,8 +508,8 @@ module benchmark_system
 		!
 		do idt = 1, nT-1
 			Tv = logm( matmul(transpose(U(:,:,idt)),U(:,:,idt+1)) ) / dt
-			call single_rho_hop_interp(E(:,idt),E(:,idt+1),Tv,dt,rho_f,pop_p,threshold,num_extra_call)
-			!call single_rho_hop_interp_exact(E(:,idt),E(:,idt+1),Tv,dt,rho_f,pop_p,num_extra_call)
+			!call single_rho_hop_interp(E(:,idt),E(:,idt+1),Tv,dt,rho_f,pop_p,threshold,num_extra_call)
+			call single_rho_hop_interp_exact(E(:,idt),E(:,idt+1),Tv,dt,rho_f,pop_p,threshold,num_extra_call)
 		enddo
 		!
 		deallocate(Tv)
@@ -530,8 +530,8 @@ module benchmark_system
 		!
 		complex(dp), allocatable    :: iHTdt(:,:), U_dt(:,:), rho_new(:,:)
 		real(dp)   , allocatable    :: T_trans(:,:), p_trans(:,:)
-		real(dp)                    :: drate
-		integer                     :: istate, jstate, t1, all_good
+		real(dp)                    :: drate, max_T
+		integer                     :: istate, jstate, t1, num_interp
 		!
 		allocate( iHTdt  (nstate,nstate) )
 		allocate( U_dt   (nstate,nstate) )
@@ -551,22 +551,21 @@ module benchmark_system
 		do istate = 1, nstate
 			do jstate = 1, nstate
 				if ( jstate .ne. istate ) then
-					drate = 2 * dble( Tv(istate,jstate)*rho_new(jstate,istate) ) / dble( rho_t(istate,istate) + 1.d-13)
+					drate = 2 * dble( Tv(istate,jstate)*rho_new(jstate,istate) ) / dble( rho_new(istate,istate) + 1.d-13)
 					if ( drate > 0.d0 ) T_trans(istate,jstate) = drate*dt_interp
 				endif
 			enddo
 		enddo
 		!
 		! check if all good
-		all_good = 1
+		max_T = 0.d0
 		do istate = 1, nstate
-			if (sum(T_trans(istate,:)) > threshold) then
-				all_good = 0
-				exit
+			if (sum(T_trans(istate,:)) > max_T) then
+				max_T = sum(T_trans(istate,:))
 			endif
 		enddo
 		!
-		if ( all_good > 0 .or. dt_interp < dt / 1.d4 ) then
+		if ( max_T < threshold ) then
 			! do not need interpolate
 			p_trans = transpose(T_trans)
 			do istate = 1, nstate
@@ -576,9 +575,11 @@ module benchmark_system
 			rho_t = rho_new
 		else
 			! need interpolate
-			num_extra_call = num_extra_call+10
-			do t1 = 1,10
-				call single_rho_hop_interp(E1+(E2-E1)*(t1-1)/10.d0,E1+(E2-E1)*t1/10.d0,Tv,dt_interp/10,rho_t,pop_t,threshold,num_extra_call)
+			num_interp = ceiling(max_T / threshold)
+			num_extra_call = num_extra_call+num_interp
+			do t1 = 1,num_interp
+				call single_rho_hop_interp(E1+(E2-E1)*(t1-1)/num_interp,E1+(E2-E1)*t1/num_interp,&
+				                           Tv,dt_interp/num_interp,rho_t,pop_t,threshold,num_extra_call)
 			enddo
 		endif
 		!
@@ -587,7 +588,7 @@ module benchmark_system
 	end subroutine single_rho_hop_interp
 	!
 	!
-	recursive subroutine single_rho_hop_interp_exact(E1,E2,Tv,dt_interp,rho_t,pop_t,num_extra_call)
+	recursive subroutine single_rho_hop_interp_exact(E1,E2,Tv,dt_interp,rho_t,pop_t,threshold,num_extra_call)
 		! calculate the evolution of rho_t and pop_t of a single time interval
 		! if hop is too big, interpolate with dt_interp/10
 		!
@@ -595,7 +596,7 @@ module benchmark_system
 		!
 		real(dp), dimension(:)      :: E1, E2
 		real(dp), dimension(:,:)    :: Tv, pop_t
-		real(dp)                    :: dt_interp
+		real(dp)                    :: dt_interp, threshold
 		complex(dp), dimension(:,:) :: rho_t
 		integer                     :: num_extra_call
 		!
@@ -623,7 +624,7 @@ module benchmark_system
 		do istate = 1, nstate
 			do jstate = 1, nstate
 				if ( jstate .ne. istate ) then
-					drate = 2 * dble( Tv(istate,jstate)*rho_new(jstate,istate) ) / dble( rho_t(istate,istate) + 1.d-13)
+					drate = 2 * dble( Tv(istate,jstate)*rho_new(jstate,istate) ) / dble( rho_new(istate,istate) + 1.d-13)
 					if ( drate > 0.d0 ) T_trans(istate,jstate) = drate*dt_interp
 				endif
 			enddo
@@ -639,7 +640,7 @@ module benchmark_system
 		enddo
 		!
 		! find the exact WW
-		call generate_exact_p_increment(rho_t,rho_new,WW,p_trans)
+		call generate_exact_p_increment(rho_t,rho_new,WW,p_trans,ceiling(threshold - 1.d-10))
 		! Note that W = p_trans + I
 		!
 		if ( minval(WW) > -1.d-7 ) then
@@ -655,9 +656,10 @@ module benchmark_system
 			rho_t = rho_new
 		else
 			! need interpolate
-			num_extra_call = num_extra_call + 10
-			do t1 = 1,10
-				call single_rho_hop_interp_exact(E1+(E2-E1)*(t1-1)/10.d0,E1+(E2-E1)*t1/10.d0,Tv,dt_interp/10,rho_t,pop_t,num_extra_call)
+			num_extra_call = num_extra_call + 4
+			do t1 = 1,3
+				call single_rho_hop_interp_exact(E1+(E2-E1)*(t1-1)/3.d0,E1+(E2-E1)*t1/3.d0,Tv,dt_interp/3,&
+				                                 rho_t,pop_t,threshold,num_extra_call)
 			enddo
 		endif
 		!
@@ -1003,7 +1005,6 @@ module benchmark_system
 		deallocate( WW,p_trans_opt )
 		!
 	end subroutine final_psi_hop_loc01_dt
-	!
 	!
 	!
 	subroutine diag_real(H_in, vec, val)
@@ -1405,12 +1406,13 @@ module benchmark_system
 	end subroutine
 	!
 	!
-	subroutine generate_exact_p_increment(rho_l, rho_f, WW, Q0)
+	subroutine generate_exact_p_increment(rho_l, rho_f, WW, Q0, niter_remove_neg)
 		implicit none
 		!
 		complex(dp), dimension(:,:)  :: rho_l, rho_f
 		real(dp)   , dimension(:,:)  :: Q0
 		real(dp)   , allocatable     :: WW(:,:)
+		integer                      :: niter_remove_neg
 		!
 		real(dp)   , allocatable     :: pop_f(:,:), pop_l(:,:), dpop(:,:), ppop_dl(:,:), ppop_ll(:,:)
 		real(dp)   , allocatable     :: P1(:,:), P2(:,:), one(:,:), eye(:,:)
@@ -1452,7 +1454,7 @@ module benchmark_system
 			WW(istate,istate) = WW(istate,istate) + 1.d0
 		enddo
 		!
-		call remove_neg_increment(P1, P2, WW, Q0, 10)
+		call remove_neg_increment(P1, P2, WW, Q0, niter_remove_neg)
 		!
 		deallocate(pop_f,pop_l,dpop,one,P1,P2,eye,ppop_dl,ppop_ll)
 		!
@@ -1820,11 +1822,12 @@ module benchmark_system
 		!
 		integer                        :: idt, istate, jstate
 		real(dp), allocatable          :: rho_diag(:), Tvt_max(:)
-		real(dp)                       :: drate
+		real(dp)                       :: drate, tt0,tt1
 		character(len=100)             :: f_sz
 		!
 		allocate( rho_diag(nstate) )
 		allocate( Tvt_max (nstate) )
+		!write(f_sz,*) nstate*nstate+1
 		write(f_sz,*) nstate+1
 		!
 		allocate( rho_f  (nstate,nstate) )
@@ -1834,6 +1837,11 @@ module benchmark_system
 		allocate( U_dt   (nstate,nstate) )
 		!
 		rho_f = matmul( matmul( transpose(U(:,:,1)),rho0 ), U(:,:,1) )
+		!
+		!tt0 = 0.50545d0
+		!tt1 = 0.50565d0
+		tt0 = -1.d0
+		tt1 = 10.d0
 		!
 		do idt = 1, nT-1
 			! print rho_ii
@@ -1847,7 +1855,10 @@ module benchmark_system
 			do istate = 1,nstate
 				Tvt_max(istate) = maxval(Tv(istate,:)*dt)
 			enddo
-			write(104,'('//adjustl(f_sz)//'(ES16.8,1X))') idt*dt, Tvt_max
+			if ( idt*dt .ge. tt0 .and. idt*dt .le. tt1 ) then
+				!write(104,'('//adjustl(f_sz)//'(ES16.8,1X))') idt*dt, transpose(Tv*dt)
+				write(104,'('//adjustl(f_sz)//'(ES16.8,1X))') idt*dt, Tvt_max
+			endif
 			!
 			! update rho and print max of each row of hopping rate
 			iHTdt = (0.d0, 0.d0)
@@ -1870,7 +1881,10 @@ module benchmark_system
 			do istate = 1,nstate
 				Tvt_max(istate) = maxval(T_trans(istate,:)*dt)
 			enddo
-			write(105,'('//adjustl(f_sz)//'(ES16.8,1X))') idt*dt, Tvt_max
+			if ( idt*dt .ge. tt0 .and. idt*dt .le. tt1 ) then
+				!write(105,'('//adjustl(f_sz)//'(ES16.8,1X))') idt*dt, transpose(T_trans*dt)
+				write(105,'('//adjustl(f_sz)//'(ES16.8,1X))') idt*dt, Tvt_max
+			endif
 		enddo
 		!
 		deallocate(rho_f,Tv,iHTdt,U_dt,rho_diag,Tvt_max)
