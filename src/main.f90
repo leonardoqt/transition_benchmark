@@ -1,7 +1,7 @@
 program test
 	!
 	use benchmark_system,  only: assign_model, assign_psi, Uini, nT, print_rho_Tvt, &
-	                             evo_npi_interp, evo_npi, evo_hst, evo_loc01, evo_rho_diab, &
+	                             evo_npi_conditional, evo_npi_interp, evo_npi, evo_hst, evo_loc01, evo_rho_diab, &
 	                             final_rho_hop, final_rho_hop_loc19, final_psi_hop_loc01, final_psi_hop_loc01_dt, &
 	                             final_rho_hop_interp, final_psi_hop_interp_dt, final_rho_hop_conditional_interp, &
 	                             test_U, test_T, test_E, test_H!, ZY_correct_sign_full, nstate
@@ -17,7 +17,7 @@ program test
 	complex(dp), allocatable :: psi(:), Ut(:,:,:), rho_f_npi_cdq(:,:), rho_f_npi_dq(:,:), rho_f_npi(:,:), rho_f_hst(:,:), &
 	                            rho_f_loc(:,:), psi_f(:,:)
 	!
-	real(dp)   , allocatable :: rho_diag_diab(:), rho_diag_npi_dq(:), rho_diag_npi(:), rho_diag_hst(:), rho_diag_loc(:)
+	real(dp)   , allocatable :: rho_diag_diab(:), rho_diag_c(:), rho_diag_npi_dq(:), rho_diag_npi(:), rho_diag_hst(:), rho_diag_loc(:)
 	real(dp)   , allocatable :: aux_vec(:,:)
 	real(dp)                 :: dt, shift, x0, x1, threshold
 	integer                  :: idt, imodel, sz, istate, ini_type, nqT, num_extra_call
@@ -74,7 +74,6 @@ program test
 	num_extra_call = 0
 	call evo_npi_interp(Ut, Tv, nqT)
 	call final_rho_hop_interp(Ut, Tv, rho_f_npi_dq, pop_p_npi_dq, nqT)
-	call final_rho_hop_conditional_interp(rho_f_npi_cdq, pop_p_npi_cdq, threshold, num_extra_call)
 	call final_psi_hop_interp_dt(Ut, Tv, psi_f, pop_p_npi_t_dq, nqT)
 	!
 	!
@@ -95,7 +94,14 @@ program test
 	endif
 	!
 	call evo_rho_diab(rho_diag_diab)
+	!call evo_npi_conditional(rho_diag_c,threshold)
+	!write(f_sz,*) sz
+	!write(*,*) 'Final population from rho'
+	!write(*,'("DIAB     " '//adjustl(f_sz)//'(ES18.10,1X))') rho_diag_diab
+	!write(*,'("COND     " '//adjustl(f_sz)//'(ES18.10,1X))') rho_diag_c
+	!stop
 	!-----------------------------------
+	call final_rho_hop_conditional_interp(rho_f_npi_cdq, pop_p_npi_cdq, threshold, num_extra_call)
 	!
 	call evo_npi(Ut, Tv)
 	call final_rho_hop(Ut, Tv, rho_f_npi, pop_p_npi)

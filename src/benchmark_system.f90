@@ -38,6 +38,7 @@ module benchmark_system
 		dt = dt_in
 		nstate = nstate_in
 		nT = ceiling( (x_fin_in - x_ini_in) / (v0*dt) )
+		dt = (x_fin_in - x_ini_in)/(v0*(nT-1))
 		!
 		if ( allocated(U) ) deallocate(U)
 		if ( allocated(E) ) deallocate(E)
@@ -144,6 +145,115 @@ module benchmark_system
 		deallocate(Ut,U_dt,iHTdt,rho_full)
 		!
 	end subroutine evo_rho_diab
+	!
+	!
+	subroutine evo_npi_conditional(rho_f,threshold)
+		! this is used to verify the following relation
+		! use ( sum_ij |Tij|rho_ii )*dt to estimate first quantum time(for wfc propagation)
+		! Err_wfc \approx a * G ^ b, where
+		! a = 0.070833366
+		! b = 2.2206
+		! 
+		implicit none
+		!
+		real(dp)   , allocatable :: rho_f(:)
+		real(dp)                 :: threshold
+		!
+		real(dp)                 :: dT_tot, zeta0, zeta1, G, aa, bb
+		real(dp)   , allocatable :: rho_diag(:,:), TT(:,:)
+		complex(dp), allocatable :: rho_full(:,:)
+		integer                  :: istate, idt, ndqt
+		!
+		dT_tot = 1.d0 ! total propagation time
+		aa = 0.070833366d0
+		bb = 2.2206d0
+		!
+		if ( allocated(rho_f) ) deallocate(rho_f)
+		allocate( rho_f(nstate) )
+		allocate( rho_diag(nstate,1) )
+		allocate( TT      (nstate,nstate) )
+		allocate( rho_full(nstate,nstate) )
+		!
+		!!!
+		!zeta0 = sqrt(dt/dT_tot)*threshold
+		zeta0 = dt/dT_tot*threshold
+		!!!
+		!
+		rho_full = matmul(matmul(transpose(U(:,:,1)),rho0),U(:,:,1))
+		do idt = 1, nT-1
+			do istate = 1, nstate
+				rho_diag(istate,1) = dble(rho_full(istate,istate))
+			enddo
+			!
+			TT = logm( matmul(transpose(U(:,:,idt)),U(:,:,idt+1)) )
+			G = sum( matmul(abs(TT),rho_diag) )
+			zeta1 = aa*(G**bb)
+			!!!
+			!ndqt = ceiling( (zeta1/zeta0)**(2.d0/(2*bb-1.d0)) )
+			ndqt = ceiling( (zeta1/zeta0)**(1.d0/(bb-1.d0)) )
+			!!!
+			call evo_npi_conditional_each(idt,ndqt,rho_full)
+		enddo
+		!
+		do istate = 1, nstate
+			rho_f(istate) = dble( rho_full(istate,istate) )
+		enddo
+		!
+		deallocate(rho_diag,TT,rho_full)
+		!
+	end subroutine evo_npi_conditional
+	!
+	!
+	subroutine evo_npi_conditional_each(idt,ndqt,rho_adiabat)
+		! propagate rho by interpolating H ndqt times
+		! on input, rho_adiabat is the rho in the adiabats of H(idt)
+		! on output, rho_adiabat is the rho in the adiabats of H(idt+1)
+		!
+		implicit none
+		!
+		integer                     :: idt, ndqt
+		complex(dp), dimension(:,:) :: rho_adiabat
+		!
+		real(dp)   , allocatable    :: E_i(:,:), E_f(:,:), H_i(:,:), H_f(:,:), H_1(:,:), H_2(:,:), dH(:,:), S(:,:)
+		complex(dp), allocatable    :: iHTdt(:,:), U_dt(:,:)
+		integer                     :: istate, idqt
+		!
+		allocate( E_i(nstate, nstate) )
+		allocate( E_f(nstate, nstate) )
+		allocate( H_i(nstate, nstate) )
+		allocate( H_f(nstate, nstate) )
+		allocate( H_1(nstate, nstate) )
+		allocate( H_2(nstate, nstate) )
+		allocate( dH (nstate, nstate) )
+		allocate( S  (nstate, nstate) )
+		allocate( iHTdt(nstate, nstate) )
+		allocate( U_dt (nstate, nstate) )
+		!
+		E_i = 0.d0
+		E_f = 0.d0
+		do istate = 1,nstate
+			E_i(istate,istate) = E(istate,idt)
+			E_f(istate,istate) = E(istate,idt+1)
+		enddo
+		!
+		S = matmul( transpose(U(:,:,idt)), U(:,:,idt+1) )
+		!
+		H_i = E_i
+		H_f = matmul( matmul( S, E_f), transpose(S) )
+		dH = (H_f - H_i) / ndqt
+		!
+		do idqt = 1,ndqt
+			H_1 = H_i + (idqt-1)*dH
+			H_2 = H_i +  idqt   *dH
+			iHTdt = (H_1+H_2)*(0.d0, -5.d-1)*(dt/ndqt)
+			U_dt = expm(iHTdt)
+			rho_adiabat = matmul( matmul(U_dt,rho_adiabat),conjg(transpose(U_dt)) )
+		enddo
+		rho_adiabat = matmul( matmul(transpose(S),rho_adiabat),S )
+		!
+		deallocate(E_i,E_f,H_i,H_f,H_1,H_2,dH,S,iHTdt,U_dt)
+		!
+	end subroutine evo_npi_conditional_each
 	!
 	!
 	!
@@ -508,8 +618,8 @@ module benchmark_system
 		!
 		do idt = 1, nT-1
 			Tv = logm( matmul(transpose(U(:,:,idt)),U(:,:,idt+1)) ) / dt
-			!call single_rho_hop_interp(E(:,idt),E(:,idt+1),Tv,dt,rho_f,pop_p,threshold,num_extra_call)
-			call single_rho_hop_interp_exact(E(:,idt),E(:,idt+1),Tv,dt,rho_f,pop_p,threshold,num_extra_call)
+			call single_rho_hop_interp(E(:,idt),E(:,idt+1),Tv,dt,rho_f,pop_p,threshold,num_extra_call)
+			!call single_rho_hop_interp_exact(E(:,idt),E(:,idt+1),Tv,dt,rho_f,pop_p,threshold,num_extra_call)
 		enddo
 		!
 		deallocate(Tv)
