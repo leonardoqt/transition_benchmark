@@ -94,12 +94,12 @@ program test
 	endif
 	!
 	call evo_rho_diab(rho_diag_diab)
-	!call evo_npi_conditional(rho_diag_c,threshold)
-	!write(f_sz,*) sz
-	!write(*,*) 'Final population from rho'
-	!write(*,'("DIAB     " '//adjustl(f_sz)//'(ES18.10,1X))') rho_diag_diab
-	!write(*,'("COND     " '//adjustl(f_sz)//'(ES18.10,1X))') rho_diag_c
-	!stop
+	call evo_npi_conditional(rho_diag_c,threshold)
+	write(f_sz,*) sz
+	write(*,*) 'Final population from rho'
+	write(*,'("DIAB     " '//adjustl(f_sz)//'(ES23.15,1X))') rho_diag_diab
+	write(*,'("COND     " '//adjustl(f_sz)//'(ES23.15,1X))') rho_diag_c
+	stop
 	!-----------------------------------
 	call final_rho_hop_conditional_interp(rho_f_npi_cdq, pop_p_npi_cdq, threshold, num_extra_call)
 	!
@@ -129,24 +129,24 @@ program test
 	write(f_sz,*) sz
 	!
 	write(*,*) 'Final population from rho'
-	write(*,'("DIAB     " '//adjustl(f_sz)//'(ES18.10,1X))') rho_diag_diab
-	write(*,'("NPI-dqT  " '//adjustl(f_sz)//'(ES18.10,1X))') rho_diag_npi_dq
-	write(*,'("NPI      " '//adjustl(f_sz)//'(ES18.10,1X))') rho_diag_npi
-	write(*,'("HST      " '//adjustl(f_sz)//'(ES18.10,1X))') rho_diag_hst
-	write(*,'("LOC      " '//adjustl(f_sz)//'(ES18.10,1X))') rho_diag_loc
+	write(*,'("DIAB     " '//adjustl(f_sz)//'(ES23.15,1X))') rho_diag_diab
+	write(*,'("NPI-dqT  " '//adjustl(f_sz)//'(ES23.15,1X))') rho_diag_npi_dq
+	write(*,'("NPI      " '//adjustl(f_sz)//'(ES23.15,1X))') rho_diag_npi
+	write(*,'("HST      " '//adjustl(f_sz)//'(ES23.15,1X))') rho_diag_hst
+	write(*,'("LOC      " '//adjustl(f_sz)//'(ES23.15,1X))') rho_diag_loc
 	write(*,*) ''
 	!
 	write(*,*) 'Population from actual hopping'
-	write(*,'("NPI-dqT  " '//adjustl(f_sz)//'(ES18.10,1X))') pop_p_npi_dq
-	write(*,'("NPI-cdqT " '//adjustl(f_sz)//'(ES18.10,1X))') pop_p_npi_cdq
-	write(*,'("NPI-t-dqT" '//adjustl(f_sz)//'(ES18.10,1X))') pop_p_npi_t_dq
-	write(*,'("NPI      " '//adjustl(f_sz)//'(ES18.10,1X))') pop_p_npi
-	write(*,'("NPI-t    " '//adjustl(f_sz)//'(ES18.10,1X))') pop_p_npi_t
-	write(*,'("HST      " '//adjustl(f_sz)//'(ES18.10,1X))') pop_p_hst
-	write(*,'("LOC01    " '//adjustl(f_sz)//'(ES18.10,1X))') pop_p_loc01
-	write(*,'("LOC01-l  " '//adjustl(f_sz)//'(ES18.10,1X))') pop_p_loc01_l
-	write(*,'("LOC01-t  " '//adjustl(f_sz)//'(ES18.10,1X))') pop_p_loc01_t
-	write(*,'("LOC19    " '//adjustl(f_sz)//'(ES18.10,1X))') pop_p_loc19
+	write(*,'("NPI-dqT  " '//adjustl(f_sz)//'(ES23.15,1X))') pop_p_npi_dq
+	write(*,'("NPI-cdqT " '//adjustl(f_sz)//'(ES23.15,1X))') pop_p_npi_cdq
+	write(*,'("NPI-t-dqT" '//adjustl(f_sz)//'(ES23.15,1X))') pop_p_npi_t_dq
+	write(*,'("NPI      " '//adjustl(f_sz)//'(ES23.15,1X))') pop_p_npi
+	write(*,'("NPI-t    " '//adjustl(f_sz)//'(ES23.15,1X))') pop_p_npi_t
+	write(*,'("HST      " '//adjustl(f_sz)//'(ES23.15,1X))') pop_p_hst
+	write(*,'("LOC01    " '//adjustl(f_sz)//'(ES23.15,1X))') pop_p_loc01
+	write(*,'("LOC01-l  " '//adjustl(f_sz)//'(ES23.15,1X))') pop_p_loc01_l
+	write(*,'("LOC01-t  " '//adjustl(f_sz)//'(ES23.15,1X))') pop_p_loc01_t
+	write(*,'("LOC19    " '//adjustl(f_sz)//'(ES23.15,1X))') pop_p_loc19
 	!
 	write(*,*) nT, nT+num_extra_call
 	!call test_E

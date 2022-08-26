@@ -159,14 +159,13 @@ module benchmark_system
 		real(dp)   , allocatable :: rho_f(:)
 		real(dp)                 :: threshold
 		!
-		real(dp)                 :: dT_tot, zeta0, zeta1, G, aa, bb
+		real(dp)                 :: dT_tot, zeta0, zeta1, G, aa
 		real(dp)   , allocatable :: rho_diag(:,:), TT(:,:)
 		complex(dp), allocatable :: rho_full(:,:)
 		integer                  :: istate, idt, ndqt
 		!
 		dT_tot = 1.d0 ! total propagation time
-		aa = 0.070833366d0
-		bb = 2.2206d0
+		aa = 4.42d0
 		!
 		if ( allocated(rho_f) ) deallocate(rho_f)
 		allocate( rho_f(nstate) )
@@ -175,8 +174,8 @@ module benchmark_system
 		allocate( rho_full(nstate,nstate) )
 		!
 		!!!
-		!zeta0 = sqrt(dt/dT_tot)*threshold
-		zeta0 = dt/dT_tot*threshold
+		zeta0 = sqrt(dt/dT_tot)*threshold
+		!zeta0 = dt/dT_tot*threshold
 		!!!
 		!
 		rho_full = matmul(matmul(transpose(U(:,:,1)),rho0),U(:,:,1))
@@ -186,11 +185,11 @@ module benchmark_system
 			enddo
 			!
 			TT = logm( matmul(transpose(U(:,:,idt)),U(:,:,idt+1)) )
-			G = sum( matmul(abs(TT),rho_diag) )
-			zeta1 = aa*(G**bb)
+			TT = TT * TT
+			G = sum( matmul(TT,rho_diag) )
+			zeta1 = G / aa
 			!!!
-			!ndqt = ceiling( (zeta1/zeta0)**(2.d0/(2*bb-1.d0)) )
-			ndqt = ceiling( (zeta1/zeta0)**(1.d0/(bb-1.d0)) )
+			ndqt = ceiling( (zeta1/zeta0)**(2.d0/3.d0) )
 			!!!
 			call evo_npi_conditional_each(idt,ndqt,rho_full)
 		enddo
@@ -214,7 +213,8 @@ module benchmark_system
 		integer                     :: idt, ndqt
 		complex(dp), dimension(:,:) :: rho_adiabat
 		!
-		real(dp)   , allocatable    :: E_i(:,:), E_f(:,:), H_i(:,:), H_f(:,:), H_1(:,:), H_2(:,:), dH(:,:), S(:,:)
+		real(dp)   , allocatable    :: E_i(:,:), E_f(:,:), H_i(:,:), H_f(:,:), H_1(:,:), H_2(:,:), &
+		                               dH(:,:), S(:,:), TT(:,:), U1(:,:), U2(:,:), E1(:), E2(:)
 		complex(dp), allocatable    :: iHTdt(:,:), U_dt(:,:)
 		integer                     :: istate, idqt
 		!
@@ -226,6 +226,11 @@ module benchmark_system
 		allocate( H_2(nstate, nstate) )
 		allocate( dH (nstate, nstate) )
 		allocate( S  (nstate, nstate) )
+		allocate( TT (nstate, nstate) )
+		allocate( U1 (nstate, nstate) )
+		allocate( U2 (nstate, nstate) )
+		allocate( E1 (nstate)         )
+		allocate( E2 (nstate)         )
 		allocate( iHTdt(nstate, nstate) )
 		allocate( U_dt (nstate, nstate) )
 		!
@@ -237,21 +242,39 @@ module benchmark_system
 		enddo
 		!
 		S = matmul( transpose(U(:,:,idt)), U(:,:,idt+1) )
-		!
 		H_i = E_i
 		H_f = matmul( matmul( S, E_f), transpose(S) )
 		dH = (H_f - H_i) / ndqt
 		!
+		U1 = U(:,:,idt)
+		E1 = E(:,idt)
+		!
 		do idqt = 1,ndqt
-			H_1 = H_i + (idqt-1)*dH
-			H_2 = H_i +  idqt   *dH
-			iHTdt = (H_1+H_2)*(0.d0, -5.d-1)*(dt/ndqt)
+			H_2 = H_i + idqt * dH
+			call diag_real(H_2,U2,E2)
+			U2 = matmul(U(:,:,idt),U2)
+			!
+			!do istate = 1, nstate
+			!	U2(:,istate) = U2(:,istate) * sign( 1.d0, dot_product(U1(:,istate),U2(:,istate)) )
+			!enddo
+			S = matmul(transpose(U1), U2)
+			call ZY_correct_sign_full(S,U2)
+			TT = logm(matmul(transpose(U1),U2))
+			!
+			iHTdt = (0.d0, 0.d0)
+			do istate = 1, nstate
+				iHTdt(istate,istate) = cmplx(0.d0, -(E1(istate)+E2(istate))/2*dt/ndqt, dp)
+			enddo
+			iHTdt = iHTdt - TT
 			U_dt = expm(iHTdt)
 			rho_adiabat = matmul( matmul(U_dt,rho_adiabat),conjg(transpose(U_dt)) )
+			U1 = U2
+			E1 = E2
 		enddo
+		S = matmul(transpose(U2), U(:,:,idt+1))
 		rho_adiabat = matmul( matmul(transpose(S),rho_adiabat),S )
 		!
-		deallocate(E_i,E_f,H_i,H_f,H_1,H_2,dH,S,iHTdt,U_dt)
+		deallocate(E_i,E_f,H_i,H_f,H_1,H_2,dH,S,TT,U1,U2,E1,E2,iHTdt,U_dt)
 		!
 	end subroutine evo_npi_conditional_each
 	!
