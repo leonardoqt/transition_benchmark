@@ -254,11 +254,11 @@ module benchmark_system
 			call diag_real(H_2,U2,E2)
 			U2 = matmul(U(:,:,idt),U2)
 			!
-			!do istate = 1, nstate
-			!	U2(:,istate) = U2(:,istate) * sign( 1.d0, dot_product(U1(:,istate),U2(:,istate)) )
-			!enddo
+			do istate = 1, nstate
+				U2(:,istate) = U2(:,istate) * sign( 1.d0, dot_product(U1(:,istate),U2(:,istate)) )
+			enddo
 			S = matmul(transpose(U1), U2)
-			call ZY_correct_sign_full(S,U2)
+			call TQ_correct_sign_full(S,U2)
 			TT = logm(matmul(transpose(U1),U2))
 			!
 			iHTdt = (0.d0, 0.d0)
@@ -1454,10 +1454,10 @@ module benchmark_system
 	end subroutine ZY_correct_sign
 	!
 	!
-	subroutine ZY_correct_sign_full(S, U)
+	subroutine ZY_correct_sign_full(S, U2)
 		implicit none
 		!
-		real(dp), dimension(:,:)  :: S, U
+		real(dp), dimension(:,:)  :: S, U2
 		!
 		integer                   :: istate, jstate, nochange
 		real(dp)                  :: dtr
@@ -1465,7 +1465,7 @@ module benchmark_system
 		dtr = det_U(S)
 		if ( dtr < 0.d0 ) then
 			S(:,1) = - S(:,1)
-			U(:,1) = - U(:,1)
+			U2(:,1) = - U2(:,1)
 		endif
 		!
 		nochange = 0
@@ -1479,8 +1479,8 @@ module benchmark_system
 					if ( dtr < 0.d0 ) then
 						S(:,istate) = -S(:,istate)
 						S(:,jstate) = -S(:,jstate)
-						U(:,istate) = -U(:,istate)
-						U(:,jstate) = -U(:,jstate)
+						U2(:,istate) = -U2(:,istate)
+						U2(:,jstate) = -U2(:,jstate)
 						nochange = 0
 					endif
 				enddo
@@ -1488,6 +1488,49 @@ module benchmark_system
 		enddo
 		!
 	end subroutine ZY_correct_sign_full
+	!
+	subroutine TQ_correct_sign_full(S, U2)
+		! assume all diagonals are positive
+		implicit none
+		!
+		real(dp), dimension(:,:)  :: S, U2
+		!
+		real(dp), allocatable     :: S_diag(:), aux(:,:), eye(:,:)
+		real(dp)                  :: dd1,dd2
+		integer , allocatable     :: ind(:)
+		integer                   :: indx, istate
+		!
+		allocate( S_diag(nstate) )
+		allocate( aux(nstate,nstate) )
+		allocate( eye(nstate,nstate) )
+		allocate( ind(nstate) )
+		!
+		do istate = 1, nstate
+			S_diag(istate) = S(istate,istate)
+		enddo
+		ind = sort_index(S_diag)
+		aux = 0.d0
+		eye = 0.d0
+		do istate = 1, nstate
+			eye(istate,istate) = 1.d0
+		enddo
+		!
+		do istate = 1, nstate
+			indx = ind(istate)
+			aux(indx,indx) = 1.d0
+			dd1 = det_U(matmul(S,aux)+eye)
+			S(:,indx) = -S(:,indx)
+			U2(:,indx) = -U2(:,indx)
+			dd2 = det_U(matmul(S,aux)+eye)
+			if (dd2 < dd1) then
+				S(:,indx) = -S(:,indx)
+				U2(:,indx) = -U2(:,indx)
+			endif
+		enddo
+		!
+		deallocate(S_diag,aux,eye,ind)
+		!
+	end subroutine TQ_correct_sign_full
 	!
 	!
 	subroutine correct_sign_bruteforce(S, U)
@@ -1537,6 +1580,36 @@ module benchmark_system
 			if (rand(0) < 0.5d0) U(:,istate) = -U(:,istate)
 		enddo
 	end subroutine
+	!
+	!
+	function sort_index(AA)
+		implicit none
+		!
+		real(dp), dimension(:) :: AA
+		integer , allocatable  :: sort_index(:)
+		!
+		real                   :: tmp_real
+		integer                :: t1, t2, tmp_int
+		!
+		allocate(sort_index(nstate))
+		!
+		do t1 = 1, nstate
+			sort_index(t1) = t1
+		enddo
+		!
+		do t1 = 1,nstate-1
+			do t2 = 1,nstate-1
+				if (AA(t2)<AA(t2+1)) then
+					tmp_real = AA(t2+1)
+					AA(t2+1) = AA(t2)
+					AA(t2) = tmp_real
+					tmp_int = sort_index(t2+1)
+					sort_index(t2+1) = sort_index(t2)
+					sort_index(t2) = tmp_int
+				endif
+			enddo
+		enddo
+	end function
 	!
 	!
 	subroutine generate_exact_p_increment(rho_l, rho_f, WW, Q0, niter_remove_neg)
