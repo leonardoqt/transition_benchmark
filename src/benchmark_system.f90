@@ -147,25 +147,26 @@ module benchmark_system
 	end subroutine evo_rho_diab
 	!
 	!
-	subroutine evo_npi_conditional(rho_f,threshold)
+	subroutine evo_npi_conditional(rho_f,threshold,num_extra_call)
 		! this is used to verify the following relation
-		! use ( sum_ij |Tij|rho_ii )*dt to estimate first quantum time(for wfc propagation)
-		! Err_wfc \approx a * G ^ b, where
-		! a = 0.070833366
-		! b = 2.2206
+		! use ( sum_ij Tij^2*rho_ii )*dt^2 to estimate first quantum time(for wfc propagation)
+		! Err_wfc \approx G / , where
+		! a = 4.4200
 		! 
 		implicit none
 		!
 		real(dp)   , allocatable :: rho_f(:)
 		real(dp)                 :: threshold
+		integer                  :: num_extra_call
 		!
 		real(dp)                 :: dT_tot, zeta0, zeta1, G, aa
 		real(dp)   , allocatable :: rho_diag(:,:), TT(:,:)
 		complex(dp), allocatable :: rho_full(:,:)
 		integer                  :: istate, idt, ndqt
 		!
-		dT_tot = 1.d0 ! total propagation time
+		dT_tot = nT*dt ! total propagation time
 		aa = 4.42d0
+		num_extra_call = 0
 		!
 		if ( allocated(rho_f) ) deallocate(rho_f)
 		allocate( rho_f(nstate) )
@@ -190,6 +191,7 @@ module benchmark_system
 			zeta1 = G / aa
 			!!!
 			ndqt = ceiling( (zeta1/zeta0)**(2.d0/3.d0) )
+			num_extra_call = num_extra_call + ndqt - 1
 			!!!
 			call evo_npi_conditional_each(idt,ndqt,rho_full)
 		enddo

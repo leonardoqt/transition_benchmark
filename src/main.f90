@@ -94,11 +94,12 @@ program test
 	endif
 	!
 	call evo_rho_diab(rho_diag_diab)
-	call evo_npi_conditional(rho_diag_c,threshold)
+	call evo_npi_conditional(rho_diag_c,threshold,num_extra_call)
 	write(f_sz,*) sz
 	write(*,*) 'Final population from rho'
 	write(*,'("DIAB     " '//adjustl(f_sz)//'(ES23.15,1X))') rho_diag_diab
 	write(*,'("COND     " '//adjustl(f_sz)//'(ES23.15,1X))') rho_diag_c
+	write(*,*) nT, nT+num_extra_call
 	stop
 	!-----------------------------------
 	call final_rho_hop_conditional_interp(rho_f_npi_cdq, pop_p_npi_cdq, threshold, num_extra_call)
