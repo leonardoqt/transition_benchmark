@@ -65,7 +65,7 @@ program test
 				psi(istate) = cmplx(rand(0),rand(0),dp)
 			enddo
 			aux_vec(1,1) = dble(dot_product(psi,psi))
-			psi = psi / aux_vec(1,1)
+			psi = psi / sqrt( aux_vec(1,1) )
 	end select
 	call assign_psi(psi)
 	!call print_rho_Tvt()
