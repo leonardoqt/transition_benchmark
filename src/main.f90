@@ -26,8 +26,8 @@ program test
 	!
 	read(*,*) imodel, ini_type, sz, dt, shift, nqT, threshold
 	!
-	x0 = -0.5d0
-	x1 =  0.5d0
+	x0 = -5.d-1
+	x1 =  5.d-1
 	select case (imodel)
 		case(0)
 			call assign_model(1.0d0,x0,x1,dt,H_sys_single,sz,shift)
@@ -94,13 +94,13 @@ program test
 	endif
 	!
 	call evo_rho_diab(rho_diag_diab)
-	call evo_npi_conditional(rho_diag_c,threshold,num_extra_call)
-	write(f_sz,*) sz
-	write(*,*) 'Final population from rho'
-	write(*,'("DIAB     " '//adjustl(f_sz)//'(ES23.15,1X))') rho_diag_diab
-	write(*,'("COND     " '//adjustl(f_sz)//'(ES23.15,1X))') rho_diag_c
-	write(*,*) nT, nT+num_extra_call
-	stop
+	!call evo_npi_conditional(rho_diag_c,threshold,num_extra_call)
+	!write(f_sz,*) sz
+	!write(*,*) 'Final population from rho'
+	!write(*,'("DIAB     " '//adjustl(f_sz)//'(ES23.15,1X))') rho_diag_diab
+	!write(*,'("COND     " '//adjustl(f_sz)//'(ES23.15,1X))') rho_diag_c
+	!write(*,*) nT, nT+num_extra_call
+	!stop
 	!-----------------------------------
 	call final_rho_hop_conditional_interp(rho_f_npi_cdq, pop_p_npi_cdq, threshold, num_extra_call)
 	!

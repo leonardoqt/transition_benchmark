@@ -2046,8 +2046,8 @@ module benchmark_system
 		!
 		rho_f = matmul( matmul( transpose(U(:,:,1)),rho0 ), U(:,:,1) )
 		!
-		!tt0 = 0.50545d0
-		!tt1 = 0.50565d0
+		!tt0 = 0.4999d0
+		!tt1 = 0.5001d0
 		tt0 = -1.d0
 		tt1 = 10.d0
 		!
