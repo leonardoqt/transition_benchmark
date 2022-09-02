@@ -202,4 +202,29 @@ module model_H
 		!
 	end function H_sys_mix
 	!
+	function H_sys_test(x,sz,shift)
+		!
+		implicit none
+		!
+		real(dp)  :: x, shift
+		integer   :: sz
+		real(dp), allocatable :: H_sys_test(:,:)
+		!
+		real(dp)  :: x_shift
+		integer   :: t1, sz1
+		!
+		allocate(H_sys_test(sz,sz))
+		!
+		x_shift = 5.d0/900
+		x_shift = 0.d0
+		sz1 = sz / 2
+		!
+		H_sys_test(:,:) = 1.d-1 / sqrt(sz*1.d0)
+		!
+		do t1 = 1, sz
+			H_sys_test(t1,t1) = (t1-sz1)*shift*(x*x+shift)
+		enddo
+		!
+	end function H_sys_test
+	!
 end module model_H

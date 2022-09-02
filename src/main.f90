@@ -5,7 +5,7 @@ program test
 	                             final_rho_hop, final_rho_hop_loc19, final_psi_hop_loc01, final_psi_hop_loc01_dt, &
 	                             final_rho_hop_interp, final_psi_hop_interp_dt, final_rho_hop_conditional_interp, &
 	                             test_U, test_T, test_E, test_H!, ZY_correct_sign_full, nstate
-	use model_H,           only: H_sys_single, H_sys_rotate, H_sys_parallel, H_sys_mix
+	use model_H,           only: H_sys_single, H_sys_rotate, H_sys_parallel, H_sys_mix, H_sys_test
 	use iso_fortran_env,   only: dp=> real64
 	!
 	implicit none
@@ -30,7 +30,7 @@ program test
 	x1 =  5.d-1
 	select case (imodel)
 		case(0)
-			call assign_model(1.0d0,x0,x1,dt,H_sys_single,sz,shift)
+			call assign_model(1.0d0,x0,x1,dt,H_sys_test,sz,shift)
 		case(1)
 			call assign_model(1.0d0,x0,x1,dt,H_sys_rotate,sz,shift)
 		case(2)
