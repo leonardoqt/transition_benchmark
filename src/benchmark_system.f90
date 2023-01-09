@@ -461,7 +461,7 @@ module benchmark_system
 			!
 			iHTdt = (0.d0, 0.d0)
 			do istate = 1, nstate
-				iHTdt(istate,istate) = cmplx(0.d0, -E(istate,idt+1)/2*dt, dp)
+				iHTdt(istate,istate) = cmplx(0.d0, -E(istate,idt)/2*dt, dp)
 			enddo
 			iHTdt = iHTdt - Hloc*( (0.d0, 5.d-1) * dt )
 			U_dt = expm(iHTdt)
