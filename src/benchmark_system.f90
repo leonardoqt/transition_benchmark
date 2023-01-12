@@ -282,6 +282,95 @@ module benchmark_system
 	!
 	!
 	!
+	subroutine evo_ld_conditional(rho_f,threshold,num_extra_call)
+		! 
+		implicit none
+		!
+		real(dp)   , allocatable :: rho_f(:)
+		real(dp)                 :: threshold
+		integer                  :: num_extra_call
+		!
+		real(dp)                 :: zeta0, zeta1, dtq1
+		real(dp)   , allocatable :: rho_diag(:,:), TT(:,:), ebar(:)
+		complex(dp), allocatable :: rho_full(:,:)
+		integer                  :: istate, idt, ndqt,t1,t2
+		!
+		num_extra_call = 0
+		!
+		if ( allocated(rho_f) ) deallocate(rho_f)
+		allocate( rho_f(nstate) )
+		allocate( rho_diag(nstate,1) )
+		allocate( TT      (nstate,nstate) )
+		allocate( ebar    (nstate) )
+		allocate( rho_full(nstate,nstate) )
+		!
+		zeta0 = 2*nstate*threshold
+		!
+		rho_full = matmul(matmul(transpose(U(:,:,1)),rho0),U(:,:,1))
+		do idt = 1, nT-1
+			do istate = 1, nstate
+				rho_diag(istate,1) = dble(rho_full(istate,istate))
+			enddo
+			!
+			TT = logm( matmul(transpose(U(:,:,idt)),U(:,:,idt+1)) )
+			ebar = E(:,idt)
+			ebar = ebar - sum(ebar*rho_diag(:,1))
+			zeta1 = 0.d0
+			do t1 = 1,nstate
+			do t2 = 1,nstate
+				zeta1 = zeta1 + abs( TT(t1,t2)*rho_full(t1,t2)*ebar(t1)*ebar(t2) )
+			enddo
+			enddo
+			dtq1 = sqrt(zeta0/zeta1)
+			ndqt = ceiling( dt / dtq1 )
+			num_extra_call = num_extra_call + ndqt - 1
+			call evo_ld_conditional_each(idt,ndqt,rho_full)
+		enddo
+		!
+		do istate = 1, nstate
+			rho_f(istate) = dble( rho_full(istate,istate) )
+		enddo
+		!
+		deallocate(rho_diag,TT,ebar,rho_full)
+		!
+	end subroutine evo_ld_conditional
+	!
+	subroutine evo_ld_conditional_each(idt,ndqt,rho_adiabat)
+		! propagate rho by interpolating H ndqt times
+		! on input, rho_adiabat is the rho in the adiabats of H(idt)
+		! on output, rho_adiabat is the rho in the adiabats of H(idt+1)
+		!
+		implicit none
+		!
+		integer                     :: idt, ndqt
+		complex(dp), dimension(:,:) :: rho_adiabat
+		!
+		real(dp)   , allocatable    :: dH(:,:)
+		complex(dp), allocatable    :: rho_diab(:,:), iHTdt(:,:), U_dt(:,:)
+		integer                     :: istate, idqt
+		!
+		allocate( dH      (nstate, nstate) )
+		allocate( rho_diab(nstate, nstate) )
+		allocate( iHTdt   (nstate, nstate) )
+		allocate( U_dt    (nstate, nstate) )
+		!
+		rho_diab = matmul( matmul(U(:,:,idt),rho_adiabat),transpose(U(:,:,idt)) )
+		!
+		dH = ( H(:,:,idt+1) - H(:,:,idt) ) / ndqt
+		!
+		do idqt = 1,ndqt
+			iHTdt = cmplx(dH*0.d0, -(H(:,:,idt)+(idqt-0.5d0)*dH)*dt/ndqt, dp)
+			U_dt = expm(iHTdt)
+			rho_diab = matmul( matmul(U_dt,rho_diab),conjg(transpose(U_dt)) )
+		enddo
+		rho_adiabat = matmul( matmul(transpose(U(:,:,idt+1)),rho_diab),U(:,:,idt+1) )
+		!
+		deallocate(dH,rho_diab,iHTdt,U_dt)
+		!
+	end subroutine evo_ld_conditional_each
+	!
+	!
+	!
 	subroutine evo_npi(Ut, Tv)
 		! it generates Ut and Tv rate, such that Ut*rho_diabat*Ut^\dagger is rho(t)_adiabats
 		! and Tv*dt is the hopping rate

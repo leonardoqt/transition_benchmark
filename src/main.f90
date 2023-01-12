@@ -1,7 +1,7 @@
 program test
 	!
 	use benchmark_system,  only: assign_model, assign_psi, Uini, nT, print_rho_Tvt, &
-	                             evo_npi_conditional, evo_npi_interp, evo_npi, evo_hst, evo_loc01, evo_rho_diab, &
+	                             evo_ld_conditional, evo_npi_interp, evo_npi, evo_hst, evo_loc01, evo_rho_diab, &
 	                             final_rho_hop, final_rho_hop_loc19, final_psi_hop_loc01, final_psi_hop_loc01_dt, &
 	                             final_rho_hop_interp, final_psi_hop_interp_dt, final_rho_hop_conditional_interp, &
 	                             test_U, test_T, test_E, test_H!, ZY_correct_sign_full, nstate
@@ -94,13 +94,13 @@ program test
 	endif
 	!
 	call evo_rho_diab(rho_diag_diab)
-	!call evo_npi_conditional(rho_diag_c,threshold,num_extra_call)
-	!write(f_sz,*) sz
-	!write(*,*) 'Final population from rho'
-	!write(*,'("DIAB     " '//adjustl(f_sz)//'(ES23.15,1X))') rho_diag_diab
-	!write(*,'("COND     " '//adjustl(f_sz)//'(ES23.15,1X))') rho_diag_c
-	!write(*,*) nT, nT+num_extra_call
-	!stop
+	call evo_ld_conditional(rho_diag_c,threshold,num_extra_call)
+	write(f_sz,*) sz
+	write(*,*) 'Final population from rho'
+	write(*,'("DIAB     " '//adjustl(f_sz)//'(ES23.15,1X))') rho_diag_diab
+	write(*,'("COND     " '//adjustl(f_sz)//'(ES23.15,1X))') rho_diag_c
+	write(*,*) nT, nT+num_extra_call
+	stop
 	!-----------------------------------
 	call final_rho_hop_conditional_interp(rho_f_npi_cdq, pop_p_npi_cdq, threshold, num_extra_call)
 	!
