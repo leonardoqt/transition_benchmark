@@ -494,7 +494,7 @@ module benchmark_system
 		complex(dp), dimension(:,:,:)  :: Ut
 		real(dp)   , dimension(:,:,:)  :: Tv
 		!
-		complex(dp), allocatable       :: rho_f(:,:), U_dt(:,:)
+		complex(dp), allocatable       :: rho_f(:,:), U_dt(:,:), rho_i(:,:)
 		real(dp)   , allocatable       :: pop_p(:,:)
 		!
 		real(dp)                       :: drate
@@ -503,8 +503,10 @@ module benchmark_system
 		!
 		if ( allocated(rho_f) ) deallocate(rho_f)
 		if ( allocated(pop_p) ) deallocate(pop_p)
+		if ( allocated(rho_i) ) deallocate(rho_i)
 		allocate( rho_f(nstate,nstate) )
 		allocate( pop_p(nstate,1) )
+		allocate( rho_i(nstate,nstate) )
 		!
 		allocate(  U_dt(nstate,nstate) )
 		allocate( T_trans(nstate,nstate) )
@@ -519,6 +521,7 @@ module benchmark_system
 		do idt = 1, nT-1
 			rho_f = matmul( matmul(Ut(:,:,idt+1), rho0), transpose(conjg(Ut(:,:,idt+1))) )
 			U_dt = matmul( Ut(:,:,idt+1), transpose(conjg( Ut(:,:,idt) )) )
+			rho_i = matmul( matmul(Ut(:,:,idt), rho0), transpose(conjg(Ut(:,:,idt))) )
 			!
 			! for calculating pop_p
 			! T_trans
@@ -526,7 +529,7 @@ module benchmark_system
 			do istate = 1, nstate
 				do jstate = 1, nstate
 					if ( jstate .ne. istate ) then
-						drate = 2 * dble( Tv(istate,jstate,idt)*rho_f(jstate,istate) ) / dble( rho_f(istate,istate) + 1.d-13)
+						drate = 2 * dble( Tv(istate,jstate,idt)*rho_f(jstate,istate) ) / dble( rho_i(istate,istate) + 1.d-13)
 						if ( drate > 0.d0 ) T_trans(istate,jstate) = drate
 					endif
 				enddo
@@ -559,7 +562,7 @@ module benchmark_system
 		complex(dp), dimension(:,:,:)  :: Ut
 		real(dp)   , dimension(:,:,:)  :: Tv
 		!
-		complex(dp), allocatable       :: rho_f(:,:), U_dt(:,:)
+		complex(dp), allocatable       :: rho_f(:,:), U_dt(:,:), rho_i(:,:)
 		real(dp)   , allocatable       :: pop_p(:,:)
 		integer                        :: nqT
 		!
@@ -569,6 +572,7 @@ module benchmark_system
 		!
 		if ( allocated(rho_f) ) deallocate(rho_f)
 		if ( allocated(pop_p) ) deallocate(pop_p)
+		if ( allocated(rho_i) ) deallocate(rho_i)
 		allocate( rho_f(nstate,nstate) )
 		allocate( pop_p(nstate,1) )
 		!
@@ -584,6 +588,7 @@ module benchmark_system
 		!
 		do idt = 1, (nT-1)*nqT
 			rho_f = matmul( matmul(Ut(:,:,idt+1), rho0), transpose(conjg(Ut(:,:,idt+1))) )
+			rho_i = matmul( matmul(Ut(:,:,idt), rho0), transpose(conjg(Ut(:,:,idt))) )
 			U_dt = matmul( Ut(:,:,idt+1), transpose(conjg( Ut(:,:,idt) )) )
 			!
 			! for calculating pop_p
@@ -592,7 +597,7 @@ module benchmark_system
 			do istate = 1, nstate
 				do jstate = 1, nstate
 					if ( jstate .ne. istate ) then
-						drate = 2 * dble( Tv(istate,jstate,idt)*rho_f(jstate,istate) ) / dble( rho_f(istate,istate) + 1.d-13)
+						drate = 2 * dble( Tv(istate,jstate,idt)*rho_f(jstate,istate) ) / dble( rho_i(istate,istate) + 1.d-13)
 						if ( drate > 0.d0 ) T_trans(istate,jstate) = drate
 					endif
 				enddo
@@ -686,7 +691,7 @@ module benchmark_system
 		do istate = 1, nstate
 			do jstate = 1, nstate
 				if ( jstate .ne. istate ) then
-					drate = 2 * dble( Tv(istate,jstate)*rho_new(jstate,istate) ) / dble( rho_new(istate,istate) + 1.d-13)
+					drate = 2 * dble( Tv(istate,jstate)*rho_new(jstate,istate) ) / dble( rho_t(istate,istate) + 1.d-13)
 					if ( drate > 0.d0 ) T_trans(istate,jstate) = drate*dt_interp
 				endif
 			enddo
@@ -759,7 +764,7 @@ module benchmark_system
 		do istate = 1, nstate
 			do jstate = 1, nstate
 				if ( jstate .ne. istate ) then
-					drate = 2 * dble( Tv(istate,jstate)*rho_new(jstate,istate) ) / dble( rho_new(istate,istate) + 1.d-13)
+					drate = 2 * dble( Tv(istate,jstate)*rho_new(jstate,istate) ) / dble( rho_t(istate,istate) + 1.d-13)
 					if ( drate > 0.d0 ) T_trans(istate,jstate) = drate*dt_interp
 				endif
 			enddo
@@ -847,7 +852,7 @@ module benchmark_system
 				do jstate = 1, nstate
 					if ( jstate .ne. istate ) then
 						drate = 2 * dble( Tv(istate,jstate,idt)*psi_f(jstate,1)*conjg(psi_l(istate,1)) ) / &
-						        dble( psi_f(istate,1)*conjg(psi_f(istate,1)) + 1.d-13)
+						        dble( psi_l(istate,1)*conjg(psi_l(istate,1)) + 1.d-13)
 						if ( drate > 0.d0 ) T_trans(istate,jstate) = drate
 					endif
 				enddo
